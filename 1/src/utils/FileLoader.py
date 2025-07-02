@@ -116,7 +116,21 @@ class FileLoader:
 
         try:
             for root, _, files in os.walk(abs_dir):
-                files.sort()  # Ensure consistent ordering for testing
+
+                """
+                for better testing and teacher's testing, sort files numerically
+                """
+                # Sort files numerically if filenames are numeric
+                def numeric_sort_key(filename):
+                    """Sort key function for numeric filenames"""
+                    name_without_ext = os.path.splitext(filename)[0]
+                    try:
+                        return int(name_without_ext)
+                    except ValueError:
+                        # If not numeric, fall back to string sorting
+                        return float("inf"), filename
+                files.sort(key=numeric_sort_key)
+
                 for file in files:
                     ext = os.path.splitext(file)[1].lower()
 

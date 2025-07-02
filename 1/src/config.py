@@ -34,7 +34,7 @@ LOG_TO_CONSOLE = True  # Whether to log to console
 # Query settings
 CACHE_SIZE = 100  # Cache size for boolean queries
 QUERY_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "../test/test0.txt"
+    os.path.dirname(os.path.abspath(__file__)), "../test/test_query_0.txt"
 )  # Query file path, None for input-based queries
 PRINT_RESULTS = True  # Whether to print query results
 RESULTS_PATH = None  # Path to save query results, None to disable saving

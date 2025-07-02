@@ -88,9 +88,9 @@ def main():
         try:
             with open(QUERY_FILE, "r", encoding="utf-8") as f:
                 queries = f.readlines()
-            print(f"✓ Loaded {len(queries)} queries from {QUERY_FILE}")
+            print(f"Loaded {len(queries)} queries from {QUERY_FILE}")
         except Exception as e:
-            print(f"✗ Failed to load query file: {e}")
+            print(f"Failed to load query file: {e}")
             return
     else:
         queries = []

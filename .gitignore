@@ -5,3 +5,5 @@ logs
 1/test/
 1/src/test.py
 1/query.txt
+1/*.txt
+

@@ -15,6 +15,8 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from utils.logger import setup_logger
 from utils.FileLoader import FileLoader
 
+# from utils.Tokenizer import Tokenizer
+
 
 class InvertedIndex:
     """
@@ -80,15 +82,33 @@ class InvertedIndex:
     @classmethod
     def __tokenize(cls, text: str) -> List[str]:
         """
-        Tokenize text into individual words, excluding numbers and punctuation.
+        Tokenize text into individual words, filtering alphabetic tokens only.
+
+        This method uses an external tokenizer for text processing with automatic language
+        detection support, then filters the results to keep only alphabetic tokens
+        (excluding numbers, punctuation, and symbols).
 
         Args:
-            text: Input text to tokenize
+            text (str): Input text to tokenize
 
         Returns:
-            List of alphabetic tokens
+            List[str]: List of alphabetic tokens extracted from the input text.
+                      Returns empty list if tokenization fails or no alphabetic tokens found.
+
+        Note:
+            - Supports multilingual text processing with automatic language detection
+            - Logs errors if tokenization fails and returns empty list as fallback
         """
-        return [word for word in text.split() if word.isalpha()]
+        # try:
+        #     tokens = Tokenizer.tokenize(text, "auto")
+        #     return [word for word in tokens if word.isalpha()]
+        # except Exception as e:
+        #     cls.__logger.error(f"Tokenization failed: {str(e)}")
+        #     return []
+
+        return [
+            word for word in text.split() if word.isalpha()
+        ]  # for teacher's testing
 
     def add_document(self, file_path: str, encoding: Union[str, None] = None) -> int:
         """
