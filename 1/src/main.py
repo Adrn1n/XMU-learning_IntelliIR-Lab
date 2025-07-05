@@ -84,6 +84,7 @@ def main():
 
     # Get query strings
     print(f"\nLoading queries...")
+    queries = []
     if QUERY_FILE:
         try:
             with open(QUERY_FILE, "r", encoding="utf-8") as f:
@@ -93,7 +94,6 @@ def main():
             print(f"Failed to load query file: {e}")
             return
     else:
-        queries = []
         print("Enter queries interactively (Ctrl+C or Ctrl+D to finish):")
         while True:
             try:
@@ -135,7 +135,7 @@ def main():
 
         except Exception as e:
             print(f"\tQuery {i}: '{query_stripped}' -> Error: {e}")
-            results.append(set())
+            results.append(list())
             query_times.append(0.0)
 
     total_query_end_time = time.time()
@@ -176,14 +176,21 @@ def main():
     # Process and save results
     print(f"\n=== Results Processing ===")
     if PRINT_RESULTS:
-        print("Query results:")
+        print("Query results with TF-IDF scores:")
         for i, result in enumerate(results, 1):
-            print(f"\tQuery {i}: {sorted(list(result)) if result else '[]'}")
+            if result:
+                print(f"\tQuery {i}: {len(result)} documents found")
+                for j, (docId, score) in enumerate(result):
+                    print(f"\t\t{j+1}. Document {docId}: TF-IDF = {score:.6f}")
+            else:
+                print(f"\tQuery {i}: No documents found")
 
     if RESULTS_PATH and isinstance(RESULTS_PATH, str):
         try:
             with open(RESULTS_PATH, "w", encoding="utf-8") as f:
-                f.write("=== Information Retrieval System Results ===\n")
+                f.write(
+                    "=== Information Retrieval System Results with TF-IDF Scores ===\n"
+                )
                 f.write(f"Construction time: {construction_time:.4f} seconds\n")
                 f.write(f"Memory usage: {post_construction_memory:.2f} MB\n")
                 f.write(f"Total query time: {total_query_time:.4f} seconds\n")
@@ -192,9 +199,19 @@ def main():
                 )
 
                 for i, (result, query_time) in enumerate(zip(results, query_times), 1):
-                    f.write(
-                        f"Query {i}: {sorted(list(result)) if result else '[]'} (time: {query_time:.4f}s)\n"
-                    )
+                    if result:
+                        f.write(
+                            f"Query {i}: {len(result)} documents found (time: {query_time:.4f}s)\n"
+                        )
+                        for j, (docId, score) in enumerate(result):  # Save all results
+                            f.write(
+                                f"\t{j+1}. Document {docId}: TF-IDF = {score:.6f}\n"
+                            )
+                    else:
+                        f.write(
+                            f"Query {i}: No documents found (time: {query_time:.4f}s)\n"
+                        )
+                    f.write("\n")
             print(f"Results saved to {RESULTS_PATH}")
         except Exception as e:
             print(f"Failed to save results: {e}")

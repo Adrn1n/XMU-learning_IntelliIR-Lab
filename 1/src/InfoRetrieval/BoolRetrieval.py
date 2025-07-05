@@ -1,36 +1,69 @@
 """
-Boolean retrieval implementation for information retrieval.
+Boolean retrieval implementation with TF-IDF ranking for information retrieval.
 
-This module provides boolean query processing capabilities including:
-- Support for AND (&&), OR (||), and NOT (!) operators
-- Parentheses for grouping expressions
+This module provides advanced boolean query processing capabilities including:
+- Support for AND (&&), OR (||), and NOT (!) operators with TF-IDF scoring
+- Parentheses for grouping complex expressions
+- TF-IDF weight calculation for document ranking and scoring
+- Document result ranking based on relevance scores
 - LFU-LRU cache strategy for query optimization
-- Expression parsing and evaluation
+- Expression parsing and evaluation with scoring support
+- Sorted result output by TF-IDF relevance scores
 """
 
 import sys
 import os
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Tuple, Union
 import re
 import time
+import traceback
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from utils.logger import setup_logger
 from InfoRetrieval.InvertedIndex import InvertedIndex
+from InfoRetrieval.RankingWeight import RankingWeightCalculator
 
 
 class BoolRetrieval:
+    """
+    Advanced Boolean retrieval system with TF-IDF ranking support.
+
+    This class implements a sophisticated boolean query processor that combines
+    traditional boolean logic (AND, OR, NOT) with modern TF-IDF scoring to
+    provide ranked document retrieval results. The system maintains document
+    relevance scores and returns results sorted by their TF-IDF weights.
+
+    Key Features:
+    - Boolean operators with TF-IDF scoring: AND (&&), OR (||), NOT (!)
+    - Parentheses support for complex query expressions
+    - TF-IDF weight calculation for document ranking
+    - LFU-LRU cache strategy for query performance optimization
+    - Sorted result output by relevance scores (ascending order)
+    - Expression parsing with precedence handling
+
+    Operator Semantics with TF-IDF:
+    - AND (&&): Returns intersection with minimum TF-IDF scores
+    - OR (||): Returns union with maximum TF-IDF scores
+    - NOT (!): Returns complement with computed TF-IDF scores
+
+    Cache Strategy:
+    - Least Frequently Used (LFU) with Least Recently Used (LRU) tie-breaking
+    - Configurable cache size for optimal memory usage
+    - Hit count tracking and timestamp management
+    """
+
     __logger = setup_logger(__name__)
 
     def __init__(
         self, identifier: Union[InvertedIndex, Dict[str, str]], cache_size: int = 100
     ):
         """
-        Initialize Boolean retrieval system.
+        Initialize Boolean retrieval system with TF-IDF ranking support.
 
         Args:
             identifier: InvertedIndex instance or dict containing document directory path
-            cache_size: Cache size for query results, default 100
+                       and other configuration parameters for building the index
+            cache_size: Cache size for query results with TF-IDF scores, default 100
 
         Raises:
             ValueError: When identifier dict lacks required keys or invalid cache size
@@ -46,7 +79,9 @@ class BoolRetrieval:
                 raise ValueError(f"Cache size must be positive, got: {cache_size}")
 
             self.__cache_size = cache_size
-            self.__cache: Dict[str, Tuple[int, int, Set[int]]] = {}
+            self.__cache: Dict[str, List[Union[int, List[Tuple[int, float]]]]] = (
+                {}
+            )  # query_str -> [timestamp, hit_count, [(doc_id, tf-idf), ...]]
             self.__inverted_index: InvertedIndex
 
             if isinstance(identifier, InvertedIndex):
@@ -71,8 +106,6 @@ class BoolRetrieval:
 
             self.__logger.info(
                 f"BoolRetrieval initialized successfully - Cache size: {self.__cache_size}, "
-                f"Documents: {self.__inverted_index.get_docs_count()}, "
-                f"Keywords: {self.__inverted_index.get_keywords_count()}"
             )
 
         except Exception as e:
@@ -80,14 +113,21 @@ class BoolRetrieval:
             raise
 
     def __apply_operator(
-        self, operand_stack: List[Set[int]], operator_stack: List[str]
+        self,
+        operand_stack: List[Dict[int, float]],
+        operator_stack: List[str],
     ):
         """
-        Apply top operator from operator stack.
+        Apply top operator from operator stack with TF-IDF score computation.
+
+        Implements boolean operations while preserving TF-IDF relevance scores:
+        - AND (&&): Intersection with minimum scores (conservative scoring)
+        - OR (||): Union with maximum scores (optimistic scoring)
+        - NOT (!): Complement with computed TF-IDF scores for non-matching documents
 
         Args:
-            operand_stack: Stack of operands (document ID sets)
-            operator_stack: Stack of operators
+            operand_stack: Stack of operands as {doc_id: tf_idf_score} dictionaries
+            operator_stack: Stack of operators (&&, ||, !)
 
         Raises:
             IndexError: When stack is empty or insufficient operands
@@ -107,10 +147,22 @@ class BoolRetrieval:
                     raise IndexError("NOT operation requires one operand")
 
                 operand = operand_stack.pop()
-                all_docs = set(range(1, self.__inverted_index.get_docs_count() + 1))
-                result = all_docs.difference(operand)
-                operand_stack.append(result)
-                self.__logger.debug(f"NOT operation result: {len(result)} documents")
+                all_docs = self.__inverted_index.get_all_documents__const().keys()
+                all_docs_cnt = len(all_docs)
+                res_len = all_docs_cnt - len(operand)
+                if all_docs is None:
+                    self.__logger.error("Failed to retrieve all documents from index")
+                    raise ValueError("Failed to retrieve all documents from index")
+                results = {}
+                for doc_id in all_docs:
+                    if doc_id not in operand:
+                        results[doc_id] = RankingWeightCalculator.get_res(
+                            self.__inverted_index.get_docs_total_term_count(doc_id),
+                            res_len,
+                            all_docs_cnt,
+                        )
+                operand_stack.append(results)
+                self.__logger.debug(f"NOT operation result: {len(results)} documents")
 
             elif op == "&&":
                 if len(operand_stack) < 2:
@@ -121,9 +173,13 @@ class BoolRetrieval:
 
                 right = operand_stack.pop()
                 left = operand_stack.pop()
-                result = left.intersection(right)
-                operand_stack.append(result)
-                self.__logger.debug(f"AND operation result: {len(result)} documents")
+
+                keys = left.keys() & right.keys()
+                results = {}
+                for k in keys:
+                    results[k] = min(left[k], right[k])
+                operand_stack.append(results)
+                self.__logger.debug(f"AND operation result: {len(results)} documents")
 
             elif op == "||":
                 if len(operand_stack) < 2:
@@ -134,9 +190,13 @@ class BoolRetrieval:
 
                 right = operand_stack.pop()
                 left = operand_stack.pop()
-                result = left.union(right)
-                operand_stack.append(result)
-                self.__logger.debug(f"OR operation result: {len(result)} documents")
+
+                keys = left.keys() | right.keys()
+                results = {}
+                for k in keys:
+                    results[k] = max(left.get(k, 0), right.get(k, 0))
+                operand_stack.append(results)
+                self.__logger.debug(f"OR operation result: {len(results)} documents")
 
             else:
                 self.__logger.error(f"Unknown operator: {op}")
@@ -146,25 +206,31 @@ class BoolRetrieval:
             self.__logger.error(f"Failed to apply operator: {str(e)}")
             raise
 
-    def __parse_expression(self, expr: str) -> Set[int]:
+    def __parse_expression(self, expr: str) -> Dict[int, float]:
         """
-        Parse boolean expression and compute results using stacks.
-        Operator precedence: ! > && > ||
+        Parse boolean expression and compute TF-IDF scored results using stacks.
+
+        Processes boolean expressions with operator precedence and returns documents
+        with their corresponding TF-IDF relevance scores. The parsing handles:
+        - Operator precedence: ! (NOT) > && (AND) > || (OR)
+        - Parentheses for expression grouping
+        - Keyword matching with TF-IDF score retrieval from inverted index
+        - Special character escaping with backslash notation
 
         Args:
-            expr: Boolean expression string
+            expr: Boolean expression string with keywords and operators
 
         Returns:
-            Set of document IDs matching the condition
+            Dictionary mapping document IDs to their TF-IDF relevance scores
 
         Raises:
-            ValueError: When expression format is invalid
-            Exception: When parsing errors occur
+            ValueError: When expression format is invalid or contains syntax errors
+            Exception: When parsing errors occur during evaluation
         """
         try:
             if not expr or not expr.strip():
                 self.__logger.warning("Query expression is empty")
-                return set()
+                return dict()
 
             self.__logger.info(f"Parsing expression: {expr}")
 
@@ -173,15 +239,15 @@ class BoolRetrieval:
 
             if not tokens:
                 self.__logger.warning("Expression tokenization resulted in empty list")
-                return set()
+                return dict()
 
             operand_stack = []
             operator_stack = []
             precedence = {"(": 0, "||": 1, "&&": 2, "!": 3}
 
-            i = 0
-            while i < len(tokens):
-                token = tokens[i].strip()
+            idx = 0
+            while idx < len(tokens):
+                token = tokens[idx].strip()
                 try:
                     self.__logger.debug(f"Processing token: {token}")
 
@@ -212,7 +278,7 @@ class BoolRetrieval:
                         operator_stack.append(token)
                     else:
                         if not token:
-                            i += 1
+                            idx += 1
                             continue
 
                         keyword = re.sub(r"\\([&|!()])", r"\1", token)
@@ -220,18 +286,18 @@ class BoolRetrieval:
 
                         postings = self.__inverted_index.get_postings__const(keyword)
                         if postings is not None:
-                            doc_set = postings[1].copy()
-                            operand_stack.append(doc_set)
+                            docs = postings[1].copy()
+                            operand_stack.append(docs)
                             self.__logger.debug(
-                                f"Keyword '{keyword}' found in {len(doc_set)} documents"
+                                f"Keyword '{keyword}' found in {len(docs)} documents"
                             )
                         else:
-                            operand_stack.append(set())
+                            operand_stack.append(dict())
                             self.__logger.debug(
                                 f"Keyword '{keyword}' not found in any documents"
                             )
 
-                    i += 1
+                    idx += 1
 
                 except Exception as e:
                     self.__logger.error(f"Error processing token '{token}': {str(e)}")
@@ -244,7 +310,7 @@ class BoolRetrieval:
             while operator_stack:
                 self.__apply_operator(operand_stack, operator_stack)
 
-            result = operand_stack[0] if operand_stack else set()
+            result = operand_stack[0] if operand_stack else dict()
             self.__logger.info(
                 f"Expression parsing completed, result: {len(result)} documents"
             )
@@ -254,18 +320,22 @@ class BoolRetrieval:
             self.__logger.error(f"Failed to parse expression: {str(e)}")
             raise
 
-    def query_cache(self, query: str) -> Union[Set[int], None]:
+    def query_cache__const(self, query: str) -> Union[List[Tuple[int, float]], None]:
         """
-        Query cache for specified query result.
+        Query cache for specified query result with TF-IDF scores.
 
         Args:
-            query: Query string
+            query: Query string to search in cache
 
         Returns:
-            Document ID set if found in cache, None otherwise
+            List of (document_id, tf_idf_score) tuples if found in cache, None otherwise
+            Results are sorted by TF-IDF scores in ascending order
 
         Raises:
             Exception: When cache access error occurs
+
+        Note:
+            Returns reference to internal data for performance. Do not modify the returned data.
         """
         try:
             if not query:
@@ -277,7 +347,7 @@ class BoolRetrieval:
                 self.__logger.debug(
                     f"Cache hit: '{query}' (hits: {hit_count}, results: {len(result)})"
                 )
-                return result.copy()
+                return result
 
             self.__logger.debug(f"Cache miss: '{query}'")
             return None
@@ -286,13 +356,13 @@ class BoolRetrieval:
             self.__logger.error(f"Cache query error: {str(e)}")
             return None
 
-    def __update_cache(self, query: str, result: Set[int]):
+    def __update_cache(self, query: str, result: List[Tuple[int, float]]):
         """
-        Update cache using LFU-LRU strategy.
+        Update cache using LFU-LRU strategy with TF-IDF scored results.
 
         Args:
-            query: Query string
-            result: Query result
+            query: Query string as cache key
+            result: Query result as list of (document_id, tf_idf_score) tuples
 
         Raises:
             Exception: When cache update error occurs
@@ -313,7 +383,7 @@ class BoolRetrieval:
                 oldest_time = float("inf")
                 key_to_remove = None
 
-                for key, (timestamp, hit_count, _) in self.__cache.items():
+                for key, timestamp, hit_count, _ in self.__cache.items():
                     if hit_count == min_hit_count and timestamp < oldest_time:
                         oldest_time = timestamp
                         key_to_remove = key
@@ -327,55 +397,60 @@ class BoolRetrieval:
                     self.__logger.warning("Failed to find cache entry to remove")
 
             current_time = int(time.time())
-            self.__cache[query] = (current_time, 1, result.copy())
+            self.__cache[query] = [current_time, 1, result.copy()]
             self.__logger.info(f"Added to cache: '{query}' (results: {len(result)})")
 
         except Exception as e:
             self.__logger.error(f"Cache update error: {str(e)}")
 
-    def query(self, query: str) -> Set[int]:
+    def query(self, query: str) -> List[Tuple[int, float]]:
         """
-        Execute boolean query and return matching document IDs.
+        Execute boolean query and return TF-IDF ranked document results.
+
+        Processes boolean expressions and returns matching documents sorted by
+        their TF-IDF relevance scores in ascending order. The method supports
+        caching for performance optimization and provides comprehensive logging.
 
         Args:
-            query: Query string
+            query: Boolean query string with operators (&&, ||, !) and keywords
 
         Returns:
-            Set of document IDs matching the condition
+            List of (document_id, tf_idf_score) tuples sorted by relevance scores
+            (ascending order - lower scores indicate higher relevance in this context)
 
         Raises:
-            ValueError: When query string is invalid
+            ValueError: When query string is invalid or empty
             Exception: When query execution error occurs
         """
         try:
             if not query:
                 self.__logger.warning("Query string is empty")
-                return set()
+                return list()
 
             query = query.strip()
             if not query:
                 self.__logger.warning("Query string contains only whitespace")
-                return set()
+                return list()
 
             self.__logger.info(f"Executing query: '{query}'")
 
-            cached_result = self.query_cache(query)
+            cached_result = self.query_cache__const(query)
             if cached_result is not None:
                 try:
-                    timestamp, hit_count, result = self.__cache[query]
-                    self.__cache[query] = (timestamp, hit_count + 1, result)
+                    self.__cache[query][0] = int(time.time())
+                    self.__cache[query][1] += 1
                     self.__logger.info(
                         f"Cache hit, returning {len(cached_result)} documents"
                     )
                     return cached_result
                 except Exception as cache_error:
-                    self.__logger.error(
-                        f"Failed to update cache hit count: {str(cache_error)}"
-                    )
+                    self.__logger.error(f"Failed to update cache: {str(cache_error)}")
                     return cached_result
 
             start_time = time.time()
-            result = self.__parse_expression(query)
+            result = sorted(
+                self.__parse_expression(query).items(), key=lambda x: x[1], reverse=True
+            )
             execution_time = time.time() - start_time
 
             self.__update_cache(query, result)
@@ -392,27 +467,28 @@ class BoolRetrieval:
 
     def get_cache_info(self) -> Dict[str, Union[int, float]]:
         """
-        Get cache statistics information.
+        Get comprehensive cache statistics and performance information.
 
         Returns:
-            Dictionary containing cache statistics
+            Dictionary containing cache statistics:
+            - cache_size: Maximum cache capacity
+            - current_entries: Number of cached queries
+            - usage_rate: Cache utilization percentage
+            - total_hit_count: Sum of all cache hits
+            - average_hit_count: Average hits per cached query
         """
         try:
             total_queries = len(self.__cache)
             if total_queries == 0:
-                return {
-                    "cache_size": self.__cache_size,
-                    "current_entries": 0,
-                    "usage_rate": 0.0,
-                    "total_hit_count": 0,
-                    "average_hit_count": 0.0,
-                }
-
-            total_hit_count = sum(
-                hit_count for _, hit_count, _ in self.__cache.values()
-            )
-            average_hit_count = total_hit_count / total_queries
-            usage_rate = total_queries / self.__cache_size
+                usage_rate = 0.0
+                total_hit_count = 0
+                average_hit_count = 0.0
+            else:
+                total_hit_count = sum(
+                    hit_count for _, hit_count, _ in self.__cache.values()
+                )
+                average_hit_count = total_hit_count / total_queries
+                usage_rate = total_queries / self.__cache_size
 
             return {
                 "cache_size": self.__cache_size,
@@ -427,13 +503,19 @@ class BoolRetrieval:
 
 
 if __name__ == "__main__":
-    # Interactive test mode for boolean retrieval
+    # Interactive test mode for TF-IDF Boolean retrieval system
     testDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../test")
     testExtensions = [".txt", ""]
     testExtensionsExclude = [".md"]
 
     try:
-        print("=== Boolean Retrieval Interactive Test ===")
+        print("=== TF-IDF Boolean Retrieval Interactive Test ===")
+        print(
+            "This system combines boolean logic with TF-IDF ranking for document retrieval."
+        )
+        print("Supported operators: && (AND), || (OR), ! (NOT), () (grouping)")
+        print("Results are ranked by TF-IDF relevance scores.\n")
+
         boolRetrieval = BoolRetrieval(
             {
                 "docs_dir": testDir,
@@ -443,36 +525,50 @@ if __name__ == "__main__":
             },
             cache_size=10,
         )
-        print(f"BoolRetrieval initialized successfully")
+        print(f"BoolRetrieval system initialized successfully")
+        print(f"Document index built and ready for queries")
 
+        # Sample queries to demonstrate functionality
         while True:
-            print("\n--- Menu ---")
+            print("\n" + "=" * 60)
+            print("--- TF-IDF Boolean Retrieval Menu ---")
             print("1. Execute boolean query")
             print("2. Show cache information")
-            print("3. Clear cache")
             print("0. Exit")
+            print("=" * 60)
 
             try:
-                choice = input("\nEnter your choice (0-3): ").strip()
+                choice = input("\nEnter your choice (0-2): ").strip()
 
                 if choice == "0":
-                    print("Goodbye!")
+                    print("Thank you for using TF-IDF Boolean Retrieval System!")
                     break
 
                 elif choice == "1":
+                    print("\nBoolean Query Execution:")
                     testQuery = input("Enter boolean query: ").strip()
+
                     if testQuery:
                         try:
                             startTime = time.time()
                             res = boolRetrieval.query(testQuery)
                             execTime = time.time() - startTime
 
+                            print(f"\n--- Query Results ---")
                             print(f"Query: '{testQuery}'")
-                            print(f"Results: {len(res)} documents found")
+                            print(f"Documents found: {len(res)}")
                             print(f"Execution time: {execTime:.4f}s")
 
                             if res:
-                                print(f"Document IDs: {sorted(list(res))}")
+                                print(f"\nRanked Results (Document_ID, TF-IDF_Score):")
+                                for i, (docId, score) in enumerate(
+                                    res, 1
+                                ):  # Show top 10
+                                    print(f"  {i:2d}. Document {docId}: {score:.6f}")
+
+                                # Show document IDs only for compatibility
+                                docIds = [docId for docId, _ in res]
+                                print(f"\nDocument IDs: {docIds}")
                             else:
                                 print("No documents match the query")
 
@@ -482,30 +578,29 @@ if __name__ == "__main__":
                         print("Empty query not allowed")
 
                 elif choice == "2":
+                    print("\n--- Cache Statistics ---")
                     info = boolRetrieval.get_cache_info()
-                    print("Cache Statistics:")
-                    print(f"\tCache size: {info.get('cache_size', 0)}")
-                    print(f"\tCurrent entries: {info.get('current_entries', 0)}")
-                    print(f"\tUsage rate: {info.get('usage_rate', 0.0):.2%}")
-                    print(f"\tTotal hit count: {info.get('total_hit_count', 0)}")
+                    print(f"Cache size: {info.get('cache_size', 0)}")
+                    print(f"Current entries: {info.get('current_entries', 0)}")
+                    print(f"Usage rate: {info.get('usage_rate', 0.0):.2%}")
+                    print(f"Total hit count: {info.get('total_hit_count', 0)}")
                     print(
-                        f"  Average hit count: {info.get('average_hit_count', 0.0):.2f}"
+                        f"Average hit count per query: {info.get('average_hit_count', 0.0):.2f}"
                     )
 
-                elif choice == "3":
-                    print("Cache cleared.")
-
                 else:
-                    print("Invalid choice. Please enter a number between 0-3.")
+                    print("Invalid choice. Please enter a number between 0-2.")
 
             except KeyboardInterrupt:
                 print("\n\nProgram interrupted by user.")
                 break
+            except EOFError:
+                print("\n\nEnd of input detected.")
+                break
             except Exception as excpt:
-                print(f"Error: {str(excpt)}")
+                print(f"Unexpected error: {str(excpt)}")
 
     except Exception as excpt:
-        print(f"Failed to initialize boolean retrieval: {str(excpt)}")
-        import traceback
-
+        print(f"Failed to initialize TF-IDF boolean retrieval system: {str(excpt)}")
+        print("\nDetailed error information:")
         traceback.print_exc()
