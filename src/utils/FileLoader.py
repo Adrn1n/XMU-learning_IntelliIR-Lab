@@ -120,6 +120,7 @@ class FileLoader:
                 """
                 for better testing and teacher's testing, sort files numerically
                 """
+
                 # Sort files numerically if filenames are numeric
                 def numeric_sort_key(filename):
                     """Sort key function for numeric filenames"""
@@ -129,6 +130,7 @@ class FileLoader:
                     except ValueError:
                         # If not numeric, fall back to string sorting
                         return float("inf"), filename
+
                 files.sort(key=numeric_sort_key)
 
                 for file in files:

@@ -510,7 +510,7 @@ if __name__ == "__main__":
                         )
                         print("Document frequencies - doc_id: raw_tf:")
                         for docId, raw_tf in doc_tf_map.items():
-                            print(f"  Document {docId}: {raw_tf} occurrences")
+                            print(f"\tDocument {docId}: {raw_tf} occurrences")
                     else:
                         print(f"Keyword '{keyword}' not found")
 
@@ -522,7 +522,7 @@ if __name__ == "__main__":
                         print("All documents in index:")
                         for docId, path in allDocs.items():
                             term_count = invIndex.get_docs_total_term_count(docId)
-                            print(f"  ID {docId}: {path} (Total terms: {term_count})")
+                            print(f"\tID {docId}: {path} (Total terms: {term_count})")
 
                 elif choice == "9":
                     idntfr = input("Enter document ID or file path: ").strip()
