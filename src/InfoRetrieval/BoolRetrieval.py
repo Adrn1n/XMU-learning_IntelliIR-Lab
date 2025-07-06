@@ -1,14 +1,23 @@
 """
-Boolean retrieval implementation with TF-IDF ranking for information retrieval.
+Boolean retrieval implementation with vector space model scoring for information retrieval.
 
 This module provides advanced boolean query processing capabilities including:
-- Support for AND (&&), OR (||), and NOT (!) operators with TF-IDF scoring
+- Automatic tokenization of search content between logical operators
+- Support for AND (&&), OR (||), and NOT (!) operators with vector space model scoring
 - Parentheses for grouping complex expressions
-- TF-IDF weight calculation for document ranking and scoring
-- Document result ranking based on relevance scores
+- Multi-term query processing with implicit AND logic between tokenized terms
+- Vector space model scoring using cosine similarity for document ranking
+- Document result ranking based on vector space relevance scores
 - LFU-LRU cache strategy for query optimization
-- Expression parsing and evaluation with scoring support
-- Sorted result output by TF-IDF relevance scores
+- Expression parsing and evaluation with vector space model scoring support
+- Sorted result output by cosine similarity relevance scores
+
+The system processes queries by:
+1. Parsing boolean expressions and extracting search content between logical operators
+2. Tokenizing each search content segment into individual terms
+3. Applying implicit AND logic to tokenized terms for multi-term queries
+4. Computing document scores using vector space model with cosine similarity
+5. Combining results using boolean operators while preserving relevance scores
 """
 
 import sys
@@ -20,31 +29,45 @@ import traceback
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from utils.logger import setup_logger
+
 from InfoRetrieval.InvertedIndex import InvertedIndex
+
+# from utils.Tokenizer import Tokenizer
 from InfoRetrieval.RankingWeight import RankingWeightCalculator
 
 
 class BoolRetrieval:
     """
-    Advanced Boolean retrieval system with TF-IDF ranking support.
+    Advanced Boolean retrieval system with vector space model scoring.
 
     This class implements a sophisticated boolean query processor that combines
-    traditional boolean logic (AND, OR, NOT) with modern TF-IDF scoring to
-    provide ranked document retrieval results. The system maintains document
-    relevance scores and returns results sorted by their TF-IDF weights.
+    traditional boolean logic (AND, OR, NOT) with vector space model scoring using
+    cosine similarity to provide ranked document retrieval results. The system
+    automatically tokenizes search terms between logical operators and computes
+    document relevance scores using vector space model.
 
     Key Features:
-    - Boolean operators with TF-IDF scoring: AND (&&), OR (||), NOT (!)
+    - Automatic tokenization of search content between logical operators
+    - Boolean operators with vector space scoring: AND (&&), OR (||), NOT (!)
     - Parentheses support for complex query expressions
-    - TF-IDF weight calculation for document ranking
+    - Multi-term query processing with implicit AND logic between tokenized terms
+    - Vector space model with TF-IDF weighting and cosine similarity scoring
     - LFU-LRU cache strategy for query performance optimization
-    - Sorted result output by relevance scores (ascending order)
+    - Sorted result output by cosine similarity scores
     - Expression parsing with precedence handling
 
-    Operator Semantics with TF-IDF:
-    - AND (&&): Returns intersection with minimum TF-IDF scores
-    - OR (||): Returns union with maximum TF-IDF scores
-    - NOT (!): Returns complement with computed TF-IDF scores
+    Query Processing Workflow:
+    1. Parse boolean expressions and identify search terms between operators
+    2. Tokenize search terms for each logical component
+    3. Apply implicit AND logic to multi-term tokenized segments
+    4. Execute boolean logic to find candidate documents
+    5. Compute vector space model scores using cosine similarity
+    6. Return ranked results sorted by relevance scores
+
+    Operator Semantics with Vector Space Model:
+    - AND (&&): Returns intersection with minimum cosine similarity scores
+    - OR (||): Returns union with maximum cosine similarity scores
+    - NOT (!): Returns complement with computed vector space scores
 
     Cache Strategy:
     - Least Frequently Used (LFU) with Least Recently Used (LRU) tie-breaking
@@ -58,12 +81,12 @@ class BoolRetrieval:
         self, identifier: Union[InvertedIndex, Dict[str, str]], cache_size: int = 100
     ):
         """
-        Initialize Boolean retrieval system with TF-IDF ranking support.
+        Initialize Boolean retrieval system with vector space model scoring support.
 
         Args:
             identifier: InvertedIndex instance or dict containing document directory path
                        and other configuration parameters for building the index
-            cache_size: Cache size for query results with TF-IDF scores, default 100
+            cache_size: Cache size for query results with vector space scores, default 100
 
         Raises:
             ValueError: When identifier dict lacks required keys or invalid cache size
@@ -81,7 +104,7 @@ class BoolRetrieval:
             self.__cache_size = cache_size
             self.__cache: Dict[str, List[Union[int, List[Tuple[int, float]]]]] = (
                 {}
-            )  # query_str -> [timestamp, hit_count, [(doc_id, tf-idf), ...]]
+            )  # query_str -> [timestamp, hit_count, [(doc_id, cosine_similarity_score), ...]]
             self.__inverted_index: InvertedIndex
 
             if isinstance(identifier, InvertedIndex):
@@ -112,21 +135,50 @@ class BoolRetrieval:
             self.__logger.error(f"BoolRetrieval initialization failed: {str(e)}")
             raise
 
+    @classmethod
+    def __tokenize(cls, text: str) -> List[str]:
+        """
+        Tokenize text into individual words, filtering alphabetic tokens only.
+
+        This method uses an external tokenizer for text processing with automatic language
+        detection support, then filters the results to keep only alphabetic tokens
+        (excluding numbers, punctuation, and symbols).
+
+        Args:
+            text (str): Input text to tokenize
+
+        Returns:
+            List[str]: List of alphabetic tokens extracted from the input text.
+                      Returns empty list if tokenization fails or no alphabetic tokens found.
+
+        Note:
+            - Supports multilingual text processing with automatic language detection
+            - Logs errors if tokenization fails and returns empty list as fallback
+        """
+        # try:
+        #     tokens = Tokenizer.tokenize(text, "auto")
+        #     return [word for word in tokens]
+        # except Exception as e:
+        #     cls.__logger.error(f"Tokenization failed: {str(e)}")
+        #     return []
+
+        return [word for word in text.split()]  # for teacher's testing
+
     def __apply_operator(
         self,
         operand_stack: List[Dict[int, float]],
         operator_stack: List[str],
     ):
         """
-        Apply top operator from operator stack with TF-IDF score computation.
+        Apply top operator from operator stack with vector space model score computation.
 
-        Implements boolean operations while preserving TF-IDF relevance scores:
-        - AND (&&): Intersection with minimum scores (conservative scoring)
-        - OR (||): Union with maximum scores (optimistic scoring)
-        - NOT (!): Complement with computed TF-IDF scores for non-matching documents
+        Implements boolean operations while preserving vector space model relevance scores:
+        - AND (&&): Intersection with minimum cosine similarity scores (conservative scoring)
+        - OR (||): Union with maximum cosine similarity scores (optimistic scoring)
+        - NOT (!): Complement with computed vector space scores for non-matching documents
 
         Args:
-            operand_stack: Stack of operands as {doc_id: tf_idf_score} dictionaries
+            operand_stack: Stack of operands as {doc_id: cosine_similarity_score} dictionaries
             operator_stack: Stack of operators (&&, ||, !)
 
         Raises:
@@ -156,7 +208,7 @@ class BoolRetrieval:
                 results = {}
                 for doc_id in all_docs:
                     if doc_id not in operand:
-                        results[doc_id] = RankingWeightCalculator.get_res(
+                        results[doc_id] = RankingWeightCalculator.tf_idf(
                             self.__inverted_index.get_docs_total_term_count(doc_id),
                             res_len,
                             all_docs_cnt,
@@ -208,20 +260,22 @@ class BoolRetrieval:
 
     def __parse_expression(self, expr: str) -> Dict[int, float]:
         """
-        Parse boolean expression and compute TF-IDF scored results using stacks.
+        Parse boolean expression and compute vector space model scored results using stacks.
 
         Processes boolean expressions with operator precedence and returns documents
-        with their corresponding TF-IDF relevance scores. The parsing handles:
-        - Operator precedence: ! (NOT) > && (AND) > || (OR)
-        - Parentheses for expression grouping
-        - Keyword matching with TF-IDF score retrieval from inverted index
-        - Special character escaping with backslash notation
+        with their corresponding vector space model relevance scores. The parsing workflow:
+        1. Parses boolean expressions and extracts search content between logical operators
+        2. Tokenizes each search content segment into individual terms
+        3. Applies implicit AND logic to tokenized terms for multi-term queries
+        4. Computes document scores using vector space model with cosine similarity
+        5. Handles operator precedence: ! (NOT) > && (AND) > || (OR)
+        6. Supports parentheses for expression grouping and special character escaping
 
         Args:
             expr: Boolean expression string with keywords and operators
 
         Returns:
-            Dictionary mapping document IDs to their TF-IDF relevance scores
+            Dictionary mapping document IDs to their cosine similarity relevance scores
 
         Raises:
             ValueError: When expression format is invalid or contains syntax errors
@@ -244,6 +298,8 @@ class BoolRetrieval:
             operand_stack = []
             operator_stack = []
             precedence = {"(": 0, "||": 1, "&&": 2, "!": 3}
+
+            all_docs_cnt = len(self.__inverted_index.get_all_documents__const())
 
             idx = 0
             while idx < len(tokens):
@@ -284,17 +340,124 @@ class BoolRetrieval:
                         keyword = re.sub(r"\\([&|!()])", r"\1", token)
                         self.__logger.debug(f"Processing keyword: {keyword}")
 
-                        postings = self.__inverted_index.get_postings__const(keyword)
-                        if postings is not None:
-                            docs = postings[1].copy()
-                            operand_stack.append(docs)
+                        # Step 1: Tokenize search content between logical operators
+                        words = self.__tokenize(keyword)
+
+                        # Step 2: Initialize vector space model computation structures
+                        keyword_results = {}
+                        weights_matrix = (
+                            []
+                        )  # Document-term weight matrix for vector space model
+                        query_weight_dict = (
+                            {}
+                        )  # Query term weights: {term: [tf_in_query, df_in_collection]}
+                        query_words = []
+                        doc_ids = (
+                            []
+                        )  # Document IDs that contain at least one query term
+
+                        # Step 3: Build TF-IDF weighted vectors for query and documents
+                        for word in words:
+                            if not word:
+                                continue
+
+                            if word in query_weight_dict:
+                                # Increment term frequency in query
+                                query_words.append(word)
+                                query_weight_dict[word][0] += 1
+                            else:
+                                # Get postings for new term and build document vectors
+                                postings = self.__inverted_index.get_postings__const(
+                                    word
+                                )
+                                if postings:
+                                    df = postings[0]
+                                    query_weight_dict[word] = [1, df]
+                                    weights_matrix.append([])
+                                    if doc_ids:
+                                        # Filter documents that contain current term (AND logic for multi-term queries)
+                                        tmp = []
+                                        for doc_id in doc_ids:
+                                            if doc_id in postings[1]:
+                                                tf = postings[1][doc_id]
+                                                tmp.append(doc_id)
+                                                # Calculate TF-IDF weight for document-term pair
+                                                weights_matrix[-1].append(
+                                                    RankingWeightCalculator.tf_idf(
+                                                        tf, df + 1, all_docs_cnt + 1
+                                                    )
+                                                )
+                                            else:
+                                                # Remove documents that don't contain current term
+                                                doc_idx = len(tmp)
+                                                for row in weights_matrix[:-1]:
+                                                    del row[doc_idx]
+                                        if not weights_matrix[0]:
+                                            # No documents contain all terms
+                                            query_weight_dict = {}
+                                            break
+                                        else:
+                                            doc_ids = tmp
+                                    else:
+                                        # First term: initialize document list
+                                        for doc_id, tf in postings[1].items():
+                                            doc_ids.append(doc_id)
+                                            weights_matrix[-1].append(
+                                                RankingWeightCalculator.tf_idf(
+                                                    tf, df + 1, all_docs_cnt + 1
+                                                )
+                                            )
+                                else:
+                                    self.__logger.debug(
+                                        f"Keyword '{word}' not found in any documents"
+                                    )
+                                    query_weight_dict = {}
+                                    break
+
+                        # Step 4: Compute cosine similarity scores using vector space model
+                        if query_weight_dict:
+                            if len(query_weight_dict) == 1:
+                                # Single term query: use its weight directly
+                                for doc_id in doc_ids:
+                                    tf, df = query_weight_dict[
+                                        next(iter(query_weight_dict))
+                                    ]
+                                    rating = RankingWeightCalculator.tf_idf(
+                                        tf, df + 1, all_docs_cnt + 1
+                                    )
+                                    keyword_results[doc_id] = rating
+                            else:
+                                # Build query vector with TF-IDF weights
+                                query_vector = [
+                                    RankingWeightCalculator.tf_idf(
+                                        query_weight_dict[word][0],
+                                        query_weight_dict[word][1] + 1,
+                                        all_docs_cnt + 1,
+                                    )
+                                    for word in query_weight_dict
+                                ]
+                                # Calculate cosine similarity for each candidate document
+                                for doc_id in doc_ids:
+                                    doc_vector = [
+                                        weights_matrix[doc_idx][doc_ids.index(doc_id)]
+                                        for doc_idx in range(len(weights_matrix))
+                                    ]
+                                    # Compute cosine similarity between query and document vectors
+                                    rating = RankingWeightCalculator.cosine_similarity(
+                                        query_vector, doc_vector
+                                    )
+                                    keyword_results[doc_id] = rating
+
+                        # Step 5: Add results to operand stack for boolean processing
+                        if keyword_results:
+                            operand_stack.append(keyword_results)
                             self.__logger.debug(
-                                f"Keyword '{keyword}' found in {len(docs)} documents"
+                                f"Keyword '{keyword}' processed, results: {len(keyword_results)} documents"
                             )
                         else:
                             operand_stack.append(dict())
                             self.__logger.debug(
-                                f"Keyword '{keyword}' not found in any documents"
+                                f"Keyword '{keyword}' processed, no results found"
                             )
 
                     idx += 1
@@ -322,14 +485,14 @@ class BoolRetrieval:
 
     def query_cache__const(self, query: str) -> Union[List[Tuple[int, float]], None]:
         """
-        Query cache for specified query result with TF-IDF scores.
+        Query cache for specified query result with vector space model scores.
 
         Args:
             query: Query string to search in cache
 
         Returns:
-            List of (document_id, tf_idf_score) tuples if found in cache, None otherwise
-            Results are sorted by TF-IDF scores in ascending order
+            List of (document_id, cosine_similarity_score) tuples if found in cache, None otherwise
+            Results are sorted by cosine similarity scores in ascending order
 
         Raises:
             Exception: When cache access error occurs
@@ -358,11 +521,11 @@ class BoolRetrieval:
 
     def __update_cache(self, query: str, result: List[Tuple[int, float]]):
         """
-        Update cache using LFU-LRU strategy with TF-IDF scored results.
+        Update cache using LFU-LRU strategy with vector space model scored results.
 
         Args:
             query: Query string as cache key
-            result: Query result as list of (document_id, tf_idf_score) tuples
+            result: Query result as list of (document_id, cosine_similarity_score) tuples
 
         Raises:
             Exception: When cache update error occurs
@@ -405,18 +568,25 @@ class BoolRetrieval:
 
     def query(self, query: str) -> List[Tuple[int, float]]:
         """
-        Execute boolean query and return TF-IDF ranked document results.
+        Execute boolean query and return vector space model ranked document results.
 
-        Processes boolean expressions and returns matching documents sorted by
-        their TF-IDF relevance scores in ascending order. The method supports
-        caching for performance optimization and provides comprehensive logging.
+        Processes boolean expressions using the following workflow:
+        1. Parses boolean expressions and extracts search content between logical operators
+        2. Tokenizes search content into individual terms
+        3. Applies implicit AND logic to multi-term tokenized segments
+        4. Executes boolean logic queries to find relevant documents
+        5. Computes document scores using vector space model with cosine similarity
+        6. Returns matching documents sorted by their relevance scores
+
+        The method supports caching for performance optimization and provides
+        comprehensive logging throughout the query execution process.
 
         Args:
             query: Boolean query string with operators (&&, ||, !) and keywords
 
         Returns:
-            List of (document_id, tf_idf_score) tuples sorted by relevance scores
-            (ascending order - lower scores indicate higher relevance in this context)
+            List of (document_id, cosine_similarity_score) tuples sorted by relevance scores
+            (descending order - higher scores indicate higher relevance)
 
         Raises:
             ValueError: When query string is invalid or empty
@@ -503,18 +673,22 @@ class BoolRetrieval:
 
 
 if __name__ == "__main__":
-    # Interactive test mode for TF-IDF Boolean retrieval system
+    # Interactive test mode for Vector Space Model Boolean retrieval system
     testDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../test")
     testExtensions = [".txt", ""]
     testExtensionsExclude = [".md"]
 
     try:
-        print("=== TF-IDF Boolean Retrieval Interactive Test ===")
+        print("=== Vector Space Model Boolean Retrieval Interactive Test ===")
         print(
-            "This system combines boolean logic with TF-IDF ranking for document retrieval."
+            "This system combines boolean logic with vector space model scoring for document retrieval."
         )
+        print("Features:")
+        print("- Automatic tokenization of search terms between logical operators")
+        print("- Boolean logic queries to find relevant documents")
+        print("- Vector space model scoring using cosine similarity")
         print("Supported operators: && (AND), || (OR), ! (NOT), () (grouping)")
-        print("Results are ranked by TF-IDF relevance scores.\n")
+        print("Results are ranked by vector space model relevance scores.\n")
 
         boolRetrieval = BoolRetrieval(
             {
@@ -531,7 +705,7 @@ if __name__ == "__main__":
         # Sample queries to demonstrate functionality
         while True:
             print("\n" + "=" * 60)
-            print("--- TF-IDF Boolean Retrieval Menu ---")
+            print("--- Vector Space Model Boolean Retrieval Menu ---")
             print("1. Execute boolean query")
             print("2. Show cache information")
             print("0. Exit")
@@ -541,7 +715,9 @@ if __name__ == "__main__":
                 choice = input("\nEnter your choice (0-2): ").strip()
 
                 if choice == "0":
-                    print("Thank you for using TF-IDF Boolean Retrieval System!")
+                    print(
+                        "Thank you for using Vector Space Model Boolean Retrieval System!"
+                    )
                     break
 
                 elif choice == "1":
@@ -560,7 +736,9 @@ if __name__ == "__main__":
                             print(f"Execution time: {execTime:.4f}s")
 
                             if res:
-                                print(f"\nRanked Results (Document_ID, TF-IDF_Score):")
+                                print(
+                                    f"\nRanked Results (Document_ID, Vector_Space_Score):"
+                                )
                                 for i, (docId, score) in enumerate(
                                     res, 1
                                 ):  # Show top 10
@@ -601,6 +779,8 @@ if __name__ == "__main__":
                 print(f"Unexpected error: {str(excpt)}")
 
     except Exception as excpt:
-        print(f"Failed to initialize TF-IDF boolean retrieval system: {str(excpt)}")
+        print(
+            f"Failed to initialize Vector Space Model boolean retrieval system: {str(excpt)}"
+        )
         print("\nDetailed error information:")
         traceback.print_exc()

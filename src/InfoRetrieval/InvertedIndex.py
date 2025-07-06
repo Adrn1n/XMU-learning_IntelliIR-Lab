@@ -142,14 +142,12 @@ class InvertedIndex:
         """
         # try:
         #     tokens = Tokenizer.tokenize(text, "auto")
-        #     return [word for word in tokens if word.isalpha()]
+        #     return [word for word in tokens]
         # except Exception as e:
         #     cls.__logger.error(f"Tokenization failed: {str(e)}")
         #     return []
 
-        return [
-            word for word in text.split() if word.isalpha()
-        ]  # for teacher's testing
+        return [word for word in text.split()]  # for teacher's testing
 
     def add_document(self, file_path: str, encoding: Union[str, None] = None) -> int:
         """
