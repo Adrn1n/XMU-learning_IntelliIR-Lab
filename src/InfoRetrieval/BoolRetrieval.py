@@ -258,6 +258,135 @@ class BoolRetrieval:
             self.__logger.error(f"Failed to apply operator: {str(e)}")
             raise
 
+    def __parse_keyword(self, keyword: str) -> Dict[int, float]:
+        """
+        Parse keyword and compute vector space model scored results.
+
+        Processes a single keyword and returns documents with their corresponding
+        vector space model relevance scores. The parsing workflow:
+        1. Tokenizes the keyword into individual terms
+        2. Applies implicit AND logic to tokenized terms for multi-term queries
+        3. Computes document scores using vector space model with cosine similarity
+
+        Args:
+            keyword: Keyword string to search in the inverted index
+
+        Returns:
+            Dictionary mapping document IDs to their cosine similarity relevance scores
+        """
+        keyword = re.sub(r"\\([&|!()])", r"\1", keyword)
+        self.__logger.debug(f"Processing keyword: {keyword}")
+
+        # Step 1: Tokenize search content between logical operators
+        words = self.__tokenize(keyword)
+
+        # Step 2: Initialize vector space model computation structures
+        keyword_results = {}
+        weights_matrix = []  # Document-term weight matrix for vector space model
+        query_weight_dict = (
+            {}
+        )  # Query term weights: {term: [tf_in_query, df_in_collection]}
+        query_words = []
+        doc_ids = []  # Document IDs that contain at least one query term
+
+        all_docs_cnt = len(self.__inverted_index.get_all_documents__const())
+
+        # Step 3: Build TF-IDF weighted vectors for query and documents
+        for word in words:
+            if not word:
+                continue
+
+            if word in query_weight_dict:
+                # Increment term frequency in query
+                query_words.append(word)
+                query_weight_dict[word][0] += 1
+            else:
+                # Get postings for new term and build document vectors
+                postings = self.__inverted_index.get_postings__const(word)
+                if postings:
+                    df = postings[0]
+                    query_weight_dict[word] = [1, df]
+                    weights_matrix.append([])
+                    if doc_ids:
+                        # Filter documents that contain current term (AND logic for multi-term queries)
+                        tmp = []
+                        for doc_id in doc_ids:
+                            if doc_id in postings[1]:
+                                tf = postings[1][doc_id]
+                                tmp.append(doc_id)
+                                # Calculate TF-IDF weight for document-term pair
+                                weights_matrix[-1].append(
+                                    RankingWeightCalculator.tf_idf(
+                                        tf, df + 1, all_docs_cnt + 1
+                                    )
+                                )
+                            else:
+                                # Remove documents that don't contain current term
+                                doc_idx = len(tmp)
+                                for row in weights_matrix[:-1]:
+                                    del row[doc_idx]
+                        if not weights_matrix[0]:
+                            # No documents contain all terms
+                            query_weight_dict = {}
+                            break
+                        else:
+                            doc_ids = tmp
+                    else:
+                        # First term: initialize document list
+                        for doc_id, tf in postings[1].items():
+                            doc_ids.append(doc_id)
+                            weights_matrix[-1].append(
+                                RankingWeightCalculator.tf_idf(
+                                    tf, df + 1, all_docs_cnt + 1
+                                )
+                            )
+                else:
+                    self.__logger.debug(f"Keyword '{word}' not found in any documents")
+                    query_weight_dict = {}
+                    break
+
+        # Step 4: Compute cosine similarity scores using vector space model
+        if query_weight_dict:
+            if len(query_weight_dict) == 1:
+                # Single term query: use its weight directly
+                for doc_id in doc_ids:
+                    tf, df = query_weight_dict[next(iter(query_weight_dict))]
+                    rating = RankingWeightCalculator.tf_idf(
+                        tf, df + 1, all_docs_cnt + 1
+                    )
+                    keyword_results[doc_id] = rating
+            else:
+                # Build query vector with TF-IDF weights
+                query_vector = [
+                    RankingWeightCalculator.tf_idf(
+                        query_weight_dict[word][0],
+                        query_weight_dict[word][1] + 1,
+                        all_docs_cnt + 1,
+                    )
+                    for word in query_weight_dict
+                ]
+                # Calculate cosine similarity for each candidate document
+                for doc_id in doc_ids:
+                    doc_vector = [
+                        weights_matrix[doc_idx][doc_ids.index(doc_id)]
+                        for doc_idx in range(len(weights_matrix))
+                    ]
+                    # Compute cosine similarity between query and document vectors
+                    rating = RankingWeightCalculator.cosine_similarity(
+                        query_vector, doc_vector
+                    )
+                    keyword_results[doc_id] = rating
+
+        # Step 5: Log results and return keyword results
+        if keyword_results:
+            self.__logger.debug(
+                f"Keyword '{keyword}' processed, results: {len(keyword_results)} documents"
+            )
+        else:
+            self.__logger.debug(f"Keyword '{keyword}' processed, no results found")
+
+        return keyword_results
+
     def __parse_expression(self, expr: str) -> Dict[int, float]:
         """
         Parse boolean expression and compute vector space model scored results using stacks.
@@ -299,11 +428,8 @@ class BoolRetrieval:
             operator_stack = []
             precedence = {"(": 0, "||": 1, "&&": 2, "!": 3}
 
-            all_docs_cnt = len(self.__inverted_index.get_all_documents__const())
-
-            idx = 0
-            while idx < len(tokens):
-                token = tokens[idx].strip()
+            for token in tokens:
+                token = token.strip()
                 try:
                     self.__logger.debug(f"Processing token: {token}")
 
@@ -334,134 +460,9 @@ class BoolRetrieval:
                         operator_stack.append(token)
                     else:
                         if not token:
-                            idx += 1
                             continue
 
-                        keyword = re.sub(r"\\([&|!()])", r"\1", token)
-                        self.__logger.debug(f"Processing keyword: {keyword}")
-
-                        # Step 1: Tokenize search content between logical operators
-                        words = self.__tokenize(keyword)
-
-                        # Step 2: Initialize vector space model computation structures
-                        keyword_results = {}
-                        weights_matrix = (
-                            []
-                        )  # Document-term weight matrix for vector space model
-                        query_weight_dict = (
-                            {}
-                        )  # Query term weights: {term: [tf_in_query, df_in_collection]}
-                        query_words = []
-                        doc_ids = (
-                            []
-                        )  # Document IDs that contain at least one query term
-
-                        # Step 3: Build TF-IDF weighted vectors for query and documents
-                        for word in words:
-                            if not word:
-                                continue
-
-                            if word in query_weight_dict:
-                                # Increment term frequency in query
-                                query_words.append(word)
-                                query_weight_dict[word][0] += 1
-                            else:
-                                # Get postings for new term and build document vectors
-                                postings = self.__inverted_index.get_postings__const(
-                                    word
-                                )
-                                if postings:
-                                    df = postings[0]
-                                    query_weight_dict[word] = [1, df]
-                                    weights_matrix.append([])
-                                    if doc_ids:
-                                        # Filter documents that contain current term (AND logic for multi-term queries)
-                                        tmp = []
-                                        for doc_id in doc_ids:
-                                            if doc_id in postings[1]:
-                                                tf = postings[1][doc_id]
-                                                tmp.append(doc_id)
-                                                # Calculate TF-IDF weight for document-term pair
-                                                weights_matrix[-1].append(
-                                                    RankingWeightCalculator.tf_idf(
-                                                        tf, df + 1, all_docs_cnt + 1
-                                                    )
-                                                )
-                                            else:
-                                                # Remove documents that don't contain current term
-                                                doc_idx = len(tmp)
-                                                for row in weights_matrix[:-1]:
-                                                    del row[doc_idx]
-                                        if not weights_matrix[0]:
-                                            # No documents contain all terms
-                                            query_weight_dict = {}
-                                            break
-                                        else:
-                                            doc_ids = tmp
-                                    else:
-                                        # First term: initialize document list
-                                        for doc_id, tf in postings[1].items():
-                                            doc_ids.append(doc_id)
-                                            weights_matrix[-1].append(
-                                                RankingWeightCalculator.tf_idf(
-                                                    tf, df + 1, all_docs_cnt + 1
-                                                )
-                                            )
-                                else:
-                                    self.__logger.debug(
-                                        f"Keyword '{word}' not found in any documents"
-                                    )
-                                    query_weight_dict = {}
-                                    break
-
-                        # Step 4: Compute cosine similarity scores using vector space model
-                        if query_weight_dict:
-                            if len(query_weight_dict) == 1:
-                                # Single term query: use its weight directly
-                                for doc_id in doc_ids:
-                                    tf, df = query_weight_dict[
-                                        next(iter(query_weight_dict))
-                                    ]
-                                    rating = RankingWeightCalculator.tf_idf(
-                                        tf, df + 1, all_docs_cnt + 1
-                                    )
-                                    keyword_results[doc_id] = rating
-                            else:
-                                # Build query vector with TF-IDF weights
-                                query_vector = [
-                                    RankingWeightCalculator.tf_idf(
-                                        query_weight_dict[word][0],
-                                        query_weight_dict[word][1] + 1,
-                                        all_docs_cnt + 1,
-                                    )
-                                    for word in query_weight_dict
-                                ]
-                                # Calculate cosine similarity for each candidate document
-                                for doc_id in doc_ids:
-                                    doc_vector = [
-                                        weights_matrix[doc_idx][doc_ids.index(doc_id)]
-                                        for doc_idx in range(len(weights_matrix))
-                                    ]
-                                    # Compute cosine similarity between query and document vectors
-                                    rating = RankingWeightCalculator.cosine_similarity(
-                                        query_vector, doc_vector
-                                    )
-                                    keyword_results[doc_id] = rating
-
-                        # Step 5: Add results to operand stack for boolean processing
-                        if keyword_results:
-                            operand_stack.append(keyword_results)
-                            self.__logger.debug(
-                                f"Keyword '{keyword}' processed, results: {len(keyword_results)} documents"
-                            )
-                        else:
-                            operand_stack.append(dict())
-                            self.__logger.debug(
-                                f"Keyword '{keyword}' processed, no results found"
-                            )
-
-                    idx += 1
-
+                        operand_stack.append(self.__parse_keyword(token))
                 except Exception as e:
                     self.__logger.error(f"Error processing token '{token}': {str(e)}")
                     raise
