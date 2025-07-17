@@ -17,6 +17,7 @@ import psutil
 import os
 import time
 from InfoRetrieval.BoolRetrieval import BoolRetrieval
+from api.OllamaIntegrate import OllamaIntegrate
 
 from config import (
     DOCS_DIR,
@@ -27,6 +28,7 @@ from config import (
     QUERY_FILE,
     PRINT_RESULTS,
     RESULTS_PATH,
+    OLLAMA_RAG_MAX_DOCS,
 )
 
 
@@ -46,9 +48,9 @@ def get_memory_usage():
         return -1.0  # Return -1.0 if memory usage cannot be determined
 
 
-def main():
+def boolean_query_mode():
     """
-    Main function to execute boolean query workflow with performance monitoring.
+    Execute boolean query workflow with performance monitoring.
     """
     print("=== Information Retrieval System Performance Monitor ===")
 
@@ -218,6 +220,154 @@ def main():
 
     print(f"\n=== Program Completed Successfully ===")
     print(f"Total execution time: {time.time() - construction_start_time:.4f} seconds")
+
+
+def ollama_integrate_mode():
+    """
+    Execute Ollama integration mode for RAG (Retrieval-Augmented Generation).
+    """
+    print("=== Ollama RAG Integration Mode ===")
+    print("Initializing Ollama integration system...")
+
+    try:
+        # Initialize Ollama integration
+        ollama_integration = OllamaIntegrate(
+            max_docs=OLLAMA_RAG_MAX_DOCS,
+            identifier={
+                "docs_dir": DOCS_DIR,
+                "docs_extensions": DOC_EXTENSIONS,
+                "docs_extensions_exclude": DOC_EXTENSIONS_EXCLUDE,
+                "docs_encoding": DOC_ENCODING,
+            },
+            cache_size=CACHE_SIZE,
+        )
+
+        # Display available models
+        models = ollama_integration.get_model_list()
+        current_model = ollama_integration.get_model()
+
+        print(f"\nAvailable Ollama models:")
+        for i, model in enumerate(models, 1):
+            status = "(current)" if model == current_model else ""
+            print(f"\t{i}. {model}{status}")
+
+        # Model selection
+        print("\nModel Selection:")
+        print("Press Enter to use current model, or enter a number to switch")
+        model_input = input("Model choice: ").strip()
+
+        if model_input:
+            try:
+                # Try to parse as number
+                model_index = int(model_input) - 1
+                if 0 <= model_index < len(models):
+                    selected_model = models[model_index]
+                    if ollama_integration.set_model(selected_model):
+                        print(f"Switched to model: {selected_model}")
+                    else:
+                        print(f"Failed to switch to model: {selected_model}")
+                else:
+                    print(
+                        f"Invalid selection. Please enter a number between 1 and {len(models)}"
+                    )
+            except ValueError:
+                # Try to match model name directly
+                if model_input in models:
+                    if ollama_integration.set_model(model_input):
+                        print(f"Switched to model: {model_input}")
+                    else:
+                        print(f"Failed to switch to model: {model_input}")
+                else:
+                    print(
+                        f"Model '{model_input}' not found. Please use a number or exact model name."
+                    )
+        else:
+            print(f"Using current model: {current_model}")
+
+        print("\n=== Interactive Q&A Session ===")
+        print("Commands:")
+        print("\t\\new - Start new conversation")
+        print("\t\\no_query - Answer without document retrieval")
+        print("\t\\query{your_query} - Use custom boolean query")
+        print("\t'exit' or 'quit' - Exit the session")
+        print("\nEnter your questions:")
+
+        conversation_count = 0
+        while True:
+            try:
+                question = input("\nQuestion: ").strip()
+
+                if question.lower() in ["exit", "quit"]:
+                    break
+
+                if not question:
+                    continue
+
+                # Get answer from Ollama integration
+                response = ollama_integration.answer(question)
+                print(f"\nAnswer: {response}")
+
+                conversation_count += 1
+
+            except (EOFError, KeyboardInterrupt):
+                print("\n\nExiting Ollama integration mode...")
+                break
+            except Exception as e:
+                print(f"Error processing question: {e}")
+                continue
+
+        print(f"\nSession completed. Total conversations: {conversation_count}")
+
+    except ConnectionError:
+        print("Error: Cannot connect to Ollama service.")
+        print("Please ensure Ollama is running and accessible.")
+    except ValueError as e:
+        print(f"Configuration error: {e}")
+    except Exception as e:
+        print(f"Unexpected error in Ollama integration: {e}")
+
+
+def main():
+    """
+    Main function to provide user interface for choosing between modes.
+    """
+    print("=== Information Retrieval System ===")
+    print("Note: Press Ctrl+D to exit the program")
+
+    while True:
+        try:
+            print("\n" + "=" * 50)
+            print("Please choose a mode:")
+            print(
+                "1. Boolean Query Mode - Traditional boolean search with TF-IDF scoring"
+            )
+            print(
+                "2. Ollama RAG Mode - AI-powered question answering with document retrieval"
+            )
+            print("3. Exit")
+
+            choice = input("\nEnter your choice (1-3): ").strip()
+
+            if choice == "1":
+                print("\n" + "=" * 50)
+                boolean_query_mode()
+                print("\nReturning to main menu...")
+            elif choice == "2":
+                print("\n" + "=" * 50)
+                ollama_integrate_mode()
+                print("\nReturning to main menu...")
+            elif choice == "3":
+                print("Goodbye!")
+                break
+            else:
+                print("Invalid choice. Please enter 1, 2, or 3.")
+
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye!")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            print("Please try again.")
 
 
 if __name__ == "__main__":

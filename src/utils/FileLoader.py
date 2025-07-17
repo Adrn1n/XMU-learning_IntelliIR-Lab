@@ -7,7 +7,7 @@ automatic character encoding detection using the charset-normalizer library.
 
 import sys
 import os
-from typing import List, Union
+from typing import List, Optional
 from charset_normalizer import detect
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -26,8 +26,8 @@ class FileLoader:
 
     @classmethod
     def load_file_content(
-        cls, file_path: str, encoding: Union[str, None] = None
-    ) -> Union[str, None]:
+        cls, file_path: str, encoding: Optional[str] = None
+    ) -> Optional[str]:
         """
         Load file content from the given path.
 
@@ -88,8 +88,8 @@ class FileLoader:
     def load_directory_all_files(
         cls,
         dir_path: str,
-        extensions: Union[List[str], None] = None,
-        extensions_exclude: Union[List[str], None] = None,
+        extensions: Optional[List[str]] = None,
+        extensions_exclude: Optional[List[str]] = None,
     ) -> List[str]:
         """
         Load all files with specified extensions from a directory recursively.

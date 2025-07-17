@@ -22,7 +22,7 @@ The system processes queries by:
 
 import sys
 import os
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import re
 import time
 import traceback
@@ -32,7 +32,7 @@ from utils.logger import setup_logger
 
 from InfoRetrieval.InvertedIndex import InvertedIndex
 
-# from utils.Tokenizer import Tokenizer
+from utils.Tokenizer import Tokenizer
 from InfoRetrieval.RankingWeight import RankingWeightCalculator
 
 
@@ -78,7 +78,7 @@ class BoolRetrieval:
     __logger = setup_logger(__name__)
 
     def __init__(
-        self, identifier: Union[InvertedIndex, Dict[str, str]], cache_size: int = 100
+        self, identifier: Union[InvertedIndex, Dict[str, Any]], cache_size: int = 100
     ):
         """
         Initialize Boolean retrieval system with vector space model scoring support.
@@ -155,14 +155,14 @@ class BoolRetrieval:
             - Supports multilingual text processing with automatic language detection
             - Logs errors if tokenization fails and returns empty list as fallback
         """
-        # try:
-        #     tokens = Tokenizer.tokenize(text, "auto")
-        #     return [word for word in tokens]
-        # except Exception as e:
-        #     cls.__logger.error(f"Tokenization failed: {str(e)}")
-        #     return []
+        try:
+            tokens = Tokenizer.tokenize(text, "auto")
+            return [word for word in tokens]
+        except Exception as e:
+            cls.__logger.error(f"Tokenization failed: {str(e)}")
+            return []
 
-        return [word for word in text.split()]  # for teacher's testing
+        # return [word for word in text.split()]  # for teacher's testing
 
     def __apply_operator(
         self,
@@ -484,7 +484,7 @@ class BoolRetrieval:
             self.__logger.error(f"Failed to parse expression: {str(e)}")
             raise
 
-    def query_cache__const(self, query: str) -> Union[List[Tuple[int, float]], None]:
+    def query_cache__const(self, query: str) -> Optional[List[Tuple[int, float]]]:
         """
         Query cache for specified query result with vector space model scores.
 
@@ -636,6 +636,51 @@ class BoolRetrieval:
             self.__logger.error(f"Query execution failed: {str(e)}")
             raise
 
+    def convert_id_to_path(self, doc_id: int) -> str:
+        """
+        Convert document ID to file path using the inverted index.
+
+        This method provides a convenient way to retrieve the original file path
+        from a document ID returned by query results. It's particularly useful
+        for displaying human-readable file paths instead of numeric IDs.
+
+        Args:
+            doc_id (int): Document ID to convert to file path
+
+        Returns:
+            str: Absolute file path corresponding to the document ID
+
+        Raises:
+            ValueError: When document ID is not found in the inverted index
+            TypeError: When doc_id is not an integer
+            Exception: When inverted index query fails
+        """
+        try:
+            if not isinstance(doc_id, int):
+                self.__logger.error(f"Document ID must be integer, got: {type(doc_id)}")
+                raise TypeError(f"Document ID must be integer, got: {type(doc_id)}")
+
+            if doc_id < 0:
+                self.__logger.error(f"Document ID must be non-negative, got: {doc_id}")
+                raise ValueError(f"Document ID must be non-negative, got: {doc_id}")
+
+            self.__logger.debug(f"Converting document ID {doc_id} to file path")
+
+            doc_path = self.__inverted_index.query_document(doc_id)
+            if not doc_path:
+                self.__logger.error(f"Document ID {doc_id} not found in inverted index")
+                raise ValueError(f"Document ID {doc_id} not found in index")
+
+            self.__logger.debug(f"Document ID {doc_id} resolved to path: {doc_path}")
+            return doc_path
+
+        except (ValueError, TypeError):
+            # Re-raise validation errors without wrapping
+            raise
+        except Exception as e:
+            self.__logger.error(f"Failed to convert ID {doc_id} to path: {str(e)}")
+            raise
+
     def get_cache_info(self) -> Dict[str, Union[int, float]]:
         """
         Get comprehensive cache statistics and performance information.
@@ -688,6 +733,8 @@ if __name__ == "__main__":
         print("- Automatic tokenization of search terms between logical operators")
         print("- Boolean logic queries to find relevant documents")
         print("- Vector space model scoring using cosine similarity")
+        print("- Document ID to file path conversion for result analysis")
+        print("- LFU-LRU cache strategy for query performance optimization")
         print("Supported operators: && (AND), || (OR), ! (NOT), () (grouping)")
         print("Results are ranked by vector space model relevance scores.\n")
 
@@ -709,11 +756,12 @@ if __name__ == "__main__":
             print("--- Vector Space Model Boolean Retrieval Menu ---")
             print("1. Execute boolean query")
             print("2. Show cache information")
+            print("3. Convert document ID to file path")
             print("0. Exit")
             print("=" * 60)
 
             try:
-                choice = input("\nEnter your choice (0-2): ").strip()
+                choice = input("\nEnter your choice (0-3): ").strip()
 
                 if choice == "0":
                     print(
@@ -741,9 +789,20 @@ if __name__ == "__main__":
                                     f"\nRanked Results (Document_ID, Vector_Space_Score):"
                                 )
                                 for i, (docId, score) in enumerate(
-                                    res, 1
+                                    res[:10], 1
                                 ):  # Show top 10
-                                    print(f"  {i:2d}. Document {docId}: {score:.6f}")
+                                    try:
+                                        # Convert document ID to file path for display
+                                        filePath = boolRetrieval.convert_id_to_path(
+                                            docId
+                                        )
+                                        print(
+                                            f"  {i:2d}. Document {docId} ({os.path.basename(filePath)}): {score:.6f}"
+                                        )
+                                    except Exception as path_error:
+                                        print(
+                                            f"  {i:2d}. Document {docId}: {score:.6f} (path conversion failed), {str(path_error)}"
+                                        )
 
                                 # Show document IDs only for compatibility
                                 docIds = [docId for docId, _ in res]
@@ -767,8 +826,57 @@ if __name__ == "__main__":
                         f"Average hit count per query: {info.get('average_hit_count', 0.0):.2f}"
                     )
 
+                elif choice == "3":
+                    print("\n--- Document ID to File Path Conversion ---")
+                    try:
+                        docIdInput = input("Enter document ID to convert: ").strip()
+
+                        if not docIdInput:
+                            print("Empty input not allowed")
+                            continue
+
+                        try:
+                            docId = int(docIdInput)
+                        except ValueError:
+                            print(
+                                f"Invalid document ID format: '{docIdInput}'. Please enter a valid integer."
+                            )
+                            continue
+
+                        try:
+                            filePath = boolRetrieval.convert_id_to_path(docId)
+                            print(f"\n--- Conversion Result ---")
+                            print(f"Document ID: {docId}")
+                            print(f"File Path: {filePath}")
+                            print(f"File Name: {os.path.basename(filePath)}")
+                            print(f"Directory: {os.path.dirname(filePath)}")
+
+                            # Check if file exists
+                            if os.path.exists(filePath):
+                                file_size = os.path.getsize(filePath)
+                                print(f"File Size: {file_size} bytes")
+                                print("File Status: EXISTS")
+                            else:
+                                print(
+                                    "File Status: NOT FOUND (file may have been moved or deleted)"
+                                )
+
+                        except ValueError as ve:
+                            print(f"Document ID conversion error: {str(ve)}")
+                        except TypeError as te:
+                            print(f"Document ID type error: {str(te)}")
+                        except Exception as path_error:
+                            print(
+                                f"Unexpected error during conversion: {str(path_error)}"
+                            )
+
+                    except KeyboardInterrupt:
+                        print("\nOperation cancelled by user")
+                    except EOFError:
+                        print("\nEnd of input detected")
+
                 else:
-                    print("Invalid choice. Please enter a number between 0-2.")
+                    print("Invalid choice. Please enter a number between 0-3.")
 
             except KeyboardInterrupt:
                 print("\n\nProgram interrupted by user.")

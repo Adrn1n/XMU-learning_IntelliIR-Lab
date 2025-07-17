@@ -24,7 +24,7 @@ Data Structures:
 
 import sys
 import os
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 from bidict import bidict
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -63,9 +63,9 @@ class InvertedIndex:
     def __init__(
         self,
         docs_dir: str,
-        docs_extensions: Union[List[str], None] = None,
-        docs_extensions_exclude: Union[List[str], None] = None,
-        docs_encoding: Union[str, None] = None,
+        docs_extensions: Optional[List[str]] = None,
+        docs_extensions_exclude: Optional[List[str]] = None,
+        docs_encoding: Optional[str] = None,
     ):
         """
         Initialize the enhanced inverted index from a document directory.
@@ -149,7 +149,7 @@ class InvertedIndex:
 
         return [word for word in text.split()]  # for teacher's testing
 
-    def add_document(self, file_path: str, encoding: Union[str, None] = None) -> int:
+    def add_document(self, file_path: str, encoding: Optional[str] = None) -> int:
         """
         Add a document to the inverted index with raw term frequency tracking.
 
@@ -212,7 +212,7 @@ class InvertedIndex:
         )
         return doc_id
 
-    def remove_document(self, identifier: Union[int, str]) -> Union[int, None]:
+    def remove_document(self, identifier: Union[int, str]) -> Optional[int]:
         """
         Remove a document from the inverted index and update term statistics.
 
@@ -261,7 +261,7 @@ class InvertedIndex:
         return doc_id
 
     def __build_inv_idx(
-        self, file_paths: List[str], encoding: Union[str, None] = None
+        self, file_paths: List[str], encoding: Optional[str] = None
     ) -> Dict[str, List[Union[int, Dict[int, int]]]]:
         """
         Build inverted index from document file paths with raw term frequency tracking.
@@ -314,7 +314,7 @@ class InvertedIndex:
         """
         return list(self.__inverted_index.keys())
 
-    def query_document(self, identifier: Union[int, str]) -> Union[str, int, None]:
+    def query_document(self, identifier: Union[int, str]) -> Optional[Union[str, int]]:
         """
         Query document by ID or file path.
 
@@ -375,7 +375,7 @@ class InvertedIndex:
 
     def get_postings__const(
         self, token: str
-    ) -> Union[List[Union[int, Dict[int, int]]], None]:
+    ) -> Optional[List[Union[int, Dict[int, int]]]]:
         """
         Get posting list for specified token with raw term frequency data.
 

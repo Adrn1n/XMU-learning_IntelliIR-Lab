@@ -1,6 +1,7 @@
 bidict==0.23.1
 charset_normalizer==3.4.2
 numpy==2.3.1
+ollama==0.5.1
 polyglot==16.7.4
 psutil==7.0.0
 Requests==2.32.4
