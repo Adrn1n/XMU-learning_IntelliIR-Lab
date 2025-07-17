@@ -70,7 +70,7 @@ Rules:
 
 # System prompt for generating answers based on retrieved documents
 OLLAMA_SYS_PROMPT_GENERATE_ANSWER = """
-You are an answer generator. Given a boolean query, generate a concise and informative answer based on the retrieved documents.
+You are an answer generator. Given a question, generate a concise and informative answer based on the retrieved documents.
 
 CRITICAL LANGUAGE REQUIREMENT: Always respond in the SAME LANGUAGE as the user's input question. Ignore the language of this prompt and the document collection - focus solely on matching the user's input language.
 

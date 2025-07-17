@@ -1,12 +1,3 @@
-"""
-Logger module for managing logging across the application.
-
-This module provides a centralized logging setup function that creates
-and configures loggers for different modules. Configuration parameters
-are loaded from config.py including log format, level, rotation settings,
-and output destinations.
-"""
-
 import sys
 import os
 import logging
@@ -24,33 +15,15 @@ from config import (
 
 
 def setup_logger(
-    module_name: str,
-    level_str: str = LOG_LEVEL or "INFO",
-    log_format: str = LOG_FORMAT
+    module_name,
+    level_str=LOG_LEVEL or "INFO",
+    log_format=LOG_FORMAT
     or "%(asctime)s - %(funcName)s: %(lineno)d - %(levelname)s: %(message)s",
-    max_bytes: int = LOG_MAX_BYTES or 10 * 1024 * 1024,
-    backup_count: int = LOG_BACKUP_COUNT or 10,
-    log_dir: str = LOG_DIR or os.path.dirname(os.path.abspath(__file__)) + "../logs",
-    to_console: bool = LOG_TO_CONSOLE,
-) -> logging.Logger:
-    """
-    Configure and return a logger for the specified module.
-
-    Args:
-        module_name (str): Name of the module for which to set up the logger.
-        level_str (str): Logging level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        log_format (str): Format string for log messages.
-        max_bytes (int): Maximum size of log file before rotation.
-        backup_count (int): Number of backup files to keep.
-        log_dir (str): Directory to store log files, None to disable file logging.
-        to_console (bool): Whether to output logs to console.
-
-    Returns:
-        logging.Logger: Configured logger instance.
-
-    Raises:
-        ValueError: If invalid logging level is provided.
-    """
+    max_bytes=LOG_MAX_BYTES or 10 * 1024 * 1024,
+    backup_count=LOG_BACKUP_COUNT or 10,
+    log_dir=LOG_DIR or os.path.dirname(os.path.abspath(__file__)) + "../logs",
+    to_console=LOG_TO_CONSOLE,
+):
     try:
         logger = logging.getLogger(module_name)
 
@@ -83,6 +56,7 @@ def setup_logger(
                     f"Failed to setup file logging for {module_name}: {e}. "
                     "Continuing with console logging only."
                 )
+
                 if not to_console:
                     to_console = True
 
@@ -96,12 +70,14 @@ def setup_logger(
     except Exception as e:
         fallback_logger = logging.getLogger(module_name)
         fallback_logger.setLevel(logging.INFO)
+
         if not fallback_logger.handlers:
             handler = logging.StreamHandler()
             handler.setFormatter(
                 logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
             )
             fallback_logger.addHandler(handler)
+
         fallback_logger.error(f"Failed to setup logger for {module_name}: {e}")
         return fallback_logger
 

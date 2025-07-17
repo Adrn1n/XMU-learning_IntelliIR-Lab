@@ -43,6 +43,7 @@ def get_memory_usage():
     try:
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
+
         return memory_info.rss / 1024 / 1024  # Convert to MB
     except Exception as e:
         print(f"Error getting memory usage: {e}")
@@ -62,7 +63,6 @@ def boolean_query_mode():
     # Build boolean retrieval system with timing
     print(f"\nBuilding boolean retrieval system...")
     construction_start_time = time.time()
-
     bool_retrieval = BoolRetrieval(
         {
             "docs_dir": DOCS_DIR,
@@ -72,14 +72,12 @@ def boolean_query_mode():
         },
         CACHE_SIZE,
     )
-
     construction_end_time = time.time()
     construction_time = construction_end_time - construction_start_time
 
     # Record memory usage after construction
     post_construction_memory = get_memory_usage()
     memory_increase = post_construction_memory - initial_memory
-
     print(f"Boolean retrieval system built successfully")
     print(f"Construction time: {construction_time:.4f} seconds")
     print(f"Memory usage after construction: {post_construction_memory:.2f} MB")
@@ -88,25 +86,28 @@ def boolean_query_mode():
     # Get query strings
     print(f"\nLoading queries...")
     queries = []
+
     if QUERY_FILE:
         try:
             with open(QUERY_FILE, "r", encoding="utf-8") as f:
                 queries = f.readlines()
+
             print(f"Loaded {len(queries)} queries from {QUERY_FILE}")
         except Exception as e:
             print(f"Failed to load query file: {e}")
             return
     else:
         print("Enter queries interactively (Ctrl+C or Ctrl+D to finish):")
+
         while True:
             try:
                 input_query = input("Enter query string: ")
+
                 if input_query.strip():
                     queries.append(input_query)
             except (EOFError, KeyboardInterrupt):
                 print(f"\nInput ended, collected {len(queries)} queries.")
                 break
-
     if not queries:
         print("No queries to process.")
         return
@@ -119,23 +120,22 @@ def boolean_query_mode():
 
     for i, query in enumerate(queries, 1):
         query_stripped = query.strip()
+
         if not query_stripped:
             continue
 
         # Time individual query
         query_start_time = time.time()
+
         try:
             result = bool_retrieval.query(query_stripped)
             query_end_time = time.time()
             query_time = query_end_time - query_start_time
-
             results.append(result)
             query_times.append(query_time)
-
             print(
                 f"\tQuery {i}: '{query_stripped}' -> {len(result)} documents ({query_time:.4f}s)"
             )
-
         except Exception as e:
             print(f"\tQuery {i}: '{query_stripped}' -> Error: {e}")
             results.append(list())
@@ -178,11 +178,14 @@ def boolean_query_mode():
 
     # Process and save results
     print(f"\n=== Results Processing ===")
+
     if PRINT_RESULTS:
         print("Query results with TF-IDF scores:")
+
         for i, result in enumerate(results, 1):
             if result:
                 print(f"\tQuery {i}: {len(result)} documents found")
+
                 for j, (docId, score) in enumerate(result):
                     print(f"\t\t{j+1}. Document {docId}: TF-IDF = {score:.6f}")
             else:
@@ -206,6 +209,7 @@ def boolean_query_mode():
                         f.write(
                             f"Query {i}: {len(result)} documents found (time: {query_time:.4f}s)\n"
                         )
+
                         for j, (docId, score) in enumerate(result):  # Save all results
                             f.write(
                                 f"\t{j+1}. Document {docId}: TF-IDF = {score:.6f}\n"
@@ -215,6 +219,7 @@ def boolean_query_mode():
                             f"Query {i}: No documents found (time: {query_time:.4f}s)\n"
                         )
                     f.write("\n")
+
             print(f"Results saved to {RESULTS_PATH}")
         except Exception as e:
             print(f"Failed to save results: {e}")
@@ -246,8 +251,8 @@ def ollama_integrate_mode():
         # Display available models
         models = ollama_integration.get_model_list()
         current_model = ollama_integration.get_model()
-
         print(f"\nAvailable Ollama models:")
+
         for i, model in enumerate(models, 1):
             status = "(current)" if model == current_model else ""
             print(f"\t{i}. {model}{status}")
@@ -294,6 +299,7 @@ def ollama_integrate_mode():
         print("\nEnter your questions:")
 
         conversation_count = 0
+
         while True:
             try:
                 question = input("\nQuestion: ").strip()
@@ -310,9 +316,11 @@ def ollama_integrate_mode():
                 if OLLAMA_ANSWER_STREAMING:
                     # Handle streaming mode - print each chunk as it arrives
                     complete_answer = ""
+
                     for chunk in ollama_integration.answer(question, stream=True):
                         print(chunk, end="", flush=True)
                         complete_answer += chunk
+
                     print()  # Add a newline after streaming completes
                 else:
                     # Handle non-streaming mode - print the complete answer
@@ -320,7 +328,6 @@ def ollama_integrate_mode():
                     print(response)
 
                 conversation_count += 1
-
             except (EOFError, KeyboardInterrupt):
                 print("\n\nExiting Ollama integration mode...")
                 break
@@ -329,7 +336,6 @@ def ollama_integrate_mode():
                 continue
 
         print(f"\nSession completed. Total conversations: {conversation_count}")
-
     except ConnectionError:
         print("Error: Cannot connect to Ollama service.")
         print("Please ensure Ollama is running and accessible.")
@@ -339,10 +345,7 @@ def ollama_integrate_mode():
         print(f"Unexpected error in Ollama integration: {e}")
 
 
-def main():
-    """
-    Main function to provide user interface for choosing between modes.
-    """
+if __name__ == "__main__":
     print("=== Information Retrieval System ===")
     print("Note: Press Ctrl+D to exit the program")
 
@@ -357,7 +360,6 @@ def main():
                 "2. Ollama RAG Mode - AI-powered question answering with document retrieval"
             )
             print("3. Exit")
-
             choice = input("\nEnter your choice (1-3): ").strip()
 
             if choice == "1":
@@ -373,14 +375,9 @@ def main():
                 break
             else:
                 print("Invalid choice. Please enter 1, 2, or 3.")
-
         except (EOFError, KeyboardInterrupt):
             print("\nGoodbye!")
             break
-        except Exception as e:
-            print(f"Error: {e}")
+        except Exception as excpt:
+            print(f"Error: {excpt}")
             print("Please try again.")
-
-
-if __name__ == "__main__":
-    main()
