@@ -547,7 +547,7 @@ class BoolRetrieval:
                 oldest_time = float("inf")
                 key_to_remove = None
 
-                for key, timestamp, hit_count, _ in self.__cache.items():
+                for key, (timestamp, hit_count, _) in self.__cache.items():
                     if hit_count == min_hit_count and timestamp < oldest_time:
                         oldest_time = timestamp
                         key_to_remove = key
