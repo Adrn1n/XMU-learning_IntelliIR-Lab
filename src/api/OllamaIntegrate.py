@@ -468,7 +468,7 @@ class OllamaIntegrate:
                 prompt["Documents"] = []
 
                 # Generate or use provided query
-                if isinstance(query, bool) or query is None:
+                if isinstance(query, bool):
                     # Auto-generate boolean query from question
                     generated_query = self.__generate_bool_query_from_question(question)
                     if generated_query:

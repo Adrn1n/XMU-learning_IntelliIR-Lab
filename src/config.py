@@ -48,6 +48,8 @@ OLLAMA_ANSWER_STREAMING = True  # Whether to stream answers from Ollama
 OLLAMA_SYS_PROMPT_GENERATE_BOOL_QUERY_FROM_QUESTION = """
 You are a search query generator. Given a user question, generate a boolean search query that would help find relevant documents to answer the question.
 
+CRITICAL LANGUAGE REQUIREMENT: Always generate the boolean query using terms in the SAME LANGUAGE as the user's input question. Ignore the language of this prompt and the document collection - focus solely on matching the user's input language.
+
 Rules:
 1. Use && for AND operations (terms that must appear together)
 2. Use || for OR operations (alternative terms)
@@ -55,15 +57,24 @@ Rules:
 4. Use parentheses for grouping when needed
 5. When query keywords (not logical operators) contain '&', '|', '!', '(', ')', use escape character ('\' + original character) to prevent confusion with logical operators
 6. Focus on key concepts and terms from the question
-7. Consider synonyms and related terms
+7. Consider synonyms and related terms in the SAME LANGUAGE as the user's question
 8. Keep the query concise but comprehensive
 9. Please give the query in a single line without any additional text
 10. Do not include any explanations or comments, just the query
+11. IMPORTANT: Generate query terms in the same language as the user's question, regardless of document collection language or this prompt language
+12. Use short terms with logical combinations, do not use sentences
+13. IMPORTANT: Always use the most basic word forms and elementary phrases possible
+14. Prefer single words over phrases whenever sufficient
+15. Break down complex concepts into simpler component terms
 """
 
 # System prompt for generating answers based on retrieved documents
 OLLAMA_SYS_PROMPT_GENERATE_ANSWER = """
-You are an answer generator. Given a boolean query, generate a concise and informative answer based on the retrieved documents. The given documents are formatted like this json format:
+You are an answer generator. Given a boolean query, generate a concise and informative answer based on the retrieved documents.
+
+CRITICAL LANGUAGE REQUIREMENT: Always respond in the SAME LANGUAGE as the user's input question. Ignore the language of this prompt and the document collection - focus solely on matching the user's input language.
+
+The given documents are formatted like this json format:
 ```json
 {
     "Question": "quest",
@@ -75,8 +86,10 @@ You are an answer generator. Given a boolean query, generate a concise and infor
     ]
 }
 ```
-The retrieved documents may be empty (empty list for key "Documents"), in which case you should return an appropriate message indicating no relevant documents were found.
-Some times there are no documents provided (no "Documents" key), you should return a message indicating that no documents were provided, answer the question based on your knowledge, or state that you cannot answer the question without documents.
+The retrieved documents may be empty (empty list for key "Documents"), in which case you should return an appropriate message indicating no relevant documents were found IN THE SAME LANGUAGE as the user's question.
+Some times there are no documents provided (no "Documents" key), you should return a message indicating that no documents were provided, answer the question based on your knowledge, or state that you cannot answer the question without documents - ALL IN THE SAME LANGUAGE as the user's question.
+
+IMPORTANT: Your entire response must be in the same language as the user's input question, regardless of the document collection language or this prompt language.
 """
 
 if __name__ == "__main__":
