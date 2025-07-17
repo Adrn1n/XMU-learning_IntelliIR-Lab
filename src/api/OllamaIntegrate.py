@@ -29,7 +29,7 @@ Dependencies:
 
 import sys
 import os
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Union, Optional, Generator
 import ollama
 import re
 import json
@@ -352,14 +352,69 @@ class OllamaIntegrate:
             )
             raise RuntimeError(f"Document retrieval failed: {e}") from e
 
+    def __create_streaming_generator(
+        self,
+        response_chunks=None,
+        content_only: bool = False,
+        update_history: bool = True,
+    ) -> Generator[Union[str, Dict[str, str]], None, None]:
+        """
+        Create a streaming generator that handles response chunks with flexible output.
+
+        This unified method can either return content strings or full response chunks,
+        and optionally update conversation history. It also handles empty or None responses.
+
+        Args:
+            response_chunks: Iterable of response chunks from Ollama streaming API, or None for empty generator
+            content_only: If True, yields only content strings; if False, yields full chunks
+            update_history: Whether to update conversation history with complete response
+
+        Yields:
+            Union[str, Dict[str, str]]: Content strings or response chunks based on content_only
+        """
+        # Handle case where response_chunks is None or empty (error case)
+        if response_chunks is None:
+            # Empty generator - yield nothing but maintain the generator protocol
+            return
+            # The yield statement is never reached, making this an empty generator
+
+        complete_content = ""
+
+        # Process streaming chunks
+        for chunk in response_chunks:
+            message = chunk.get("message", {})
+            content = message.get("content", "")
+
+            if content:
+                complete_content += content
+
+            # Yield based on content_only flag
+            if content_only:
+                if content:  # Only yield non-empty content
+                    yield content
+            else:
+                yield chunk  # Yield full chunk
+
+        # Add complete assistant response to conversation history if requested
+        if update_history and complete_content:
+            assistant_message_local = {
+                "role": "assistant",
+                "content": complete_content,
+            }
+            self.__conversation_history.append(assistant_message_local)
+            self.__logger.info("Streaming answer generated successfully")
+        elif update_history:
+            self.__logger.warning("Empty streaming response from Ollama")
+
     def answer_question(
         self,
         question: str,
         query: Optional[Union[str, bool]] = None,
         sys_prompt: str = OLLAMA_SYS_PROMPT_GENERATE_ANSWER,
         is_new: bool = False,
+        stream: bool = True,
         **kwargs,
-    ) -> Dict[str, Union[str, List[str]]]:
+    ) -> Union[Dict[str, Union[str, List[str]]], Generator[Dict[str, str], None, None]]:
         """
         Answer a question using retrieval-augmented generation (RAG).
 
@@ -374,10 +429,13 @@ class OllamaIntegrate:
                 - False: Answer without document retrieval
             sys_prompt (str): System prompt for answer generation.
             is_new (bool): Whether to start a new conversation (clear history).
+            stream (bool): Whether to return streaming response. If True, returns generator.
             **kwargs: Additional parameters for Ollama chat method.
 
         Returns:
-            Dict[str, Union[str, List[str]]]: Ollama response message containing the answer.
+            Union[Dict[str, Union[str, List[str]]], Generator[Dict[str, str], None, None]]:
+                If stream=False: Complete Ollama response message containing the answer.
+                If stream=True: Generator yielding streaming response chunks.
 
         Raises:
             ValueError: If question is empty or model is not set.
@@ -443,27 +501,43 @@ class OllamaIntegrate:
                 f"Generating answer with {len(self.__conversation_history)} messages in history"
             )
 
-            # Generate answer using Ollama
+            kwargs["stream"] = stream  # Ensure streaming is set in kwargs
             response = ollama.chat(
                 model=self.__model,
                 messages=self.__conversation_history,
                 **kwargs,
             )
 
-            # Add assistant response to conversation history
-            assistant_message = response.get("message", {})
-            if assistant_message:
-                self.__conversation_history.append(assistant_message)
-                self.__logger.info("Answer generated successfully")
+            # Generate answer using Ollama
+            if stream:
+                # For streaming mode, use unified streaming generator (return full chunks)
+                return self.__create_streaming_generator(
+                    response, content_only=False, update_history=True
+                )
             else:
-                self.__logger.error("Empty response from Ollama chat")
-            return assistant_message
+                # Return complete response
+                assistant_message = response.get("message", {})
+
+                if assistant_message:
+                    self.__conversation_history.append(assistant_message)
+                    self.__logger.info("Answer generated successfully")
+
+                return assistant_message
 
         except Exception as e:
             self.__logger.error(f"Failed to answer question '{question}': {e}")
-            raise RuntimeError(f"Answer generation failed: {e}") from e
+            if stream:
+                # Use the modified __create_streaming_generator with None to get an empty generator
+                return self.__create_streaming_generator(
+                    None, content_only=False, update_history=False
+                )
+            else:
+                # Return empty message for non-streaming mode
+                return {"role": "assistant", "content": ""}
 
-    def answer(self, input_text: str, **kwargs) -> str:
+    def answer(
+        self, input_text: str, stream: bool = True, **kwargs
+    ) -> Union[str, Generator[str, None, None]]:
         """
         Process user input with special commands and generate an answer.
 
@@ -477,10 +551,13 @@ class OllamaIntegrate:
 
         Args:
             input_text (str): User input potentially containing special commands and question.
+            stream (bool): Whether to return streaming response. If True, yields content chunks.
             **kwargs: Additional parameters passed to answer_question method.
 
         Returns:
-            str: Generated answer content, empty string if error occurred.
+            Union[str, Generator[str, None, None]]:
+                If stream=False: Generated answer content string.
+                If stream=True: Generator yielding content chunks.
 
         Raises:
             ValueError: If input contains no valid question after command parsing.
@@ -538,14 +615,28 @@ class OllamaIntegrate:
                 question,
                 query=query_param,
                 is_new=is_new,
+                stream=stream,
                 **kwargs,
             )
 
-            return response.get("content", "")
+            if stream:
+                # For streaming response, use unified generator (return content only)
+                return self.__create_streaming_generator(
+                    response, content_only=True, update_history=False
+                )
+            else:
+                # For non-streaming response, return content directly
+                return response.get("content", "")
 
         except Exception as e:
             self.__logger.error(f"Failed to process input '{input_text[:100]}...': {e}")
-            return ""
+            if stream:
+                # Use the modified __create_streaming_generator with None to get an empty generator
+                return self.__create_streaming_generator(
+                    None, content_only=True, update_history=False
+                )
+            else:
+                return ""  # Return empty string for non-streaming mode
 
 
 if __name__ == "__main__":
@@ -645,17 +736,39 @@ if __name__ == "__main__":
 
                 start_time = time.time()
 
-                answer = ollama_integration.answer(quest)
+                # Check if user wants streaming response
+                use_stream = (
+                    input("Use streaming response? (Y/n): ").strip().lower() != "n"
+                )
 
-                end_time = time.time()
-                response_time = end_time - start_time
+                if use_stream:
+                    print(f"\nAnswer (streaming):")
+                    answer_content = ""
+                    for content_chunk in ollama_integration.answer(quest, stream=True):
+                        print(content_chunk, end="", flush=True)
+                        answer_content += content_chunk
+                    print()  # New line after streaming
 
-                if answer:
-                    print(f"\nAnswer (generated in {response_time:.2f}s):")
-                    print(f"{answer}\n")
-                    print("-" * 80)
+                    end_time = time.time()
+                    response_time = end_time - start_time
+
+                    if answer_content:
+                        print(f"\n(Generated in {response_time:.2f}s)")
+                        print("-" * 80)
+                    else:
+                        print("Failed to generate answer. Please try again.\n")
                 else:
-                    print("Failed to generate answer. Please try again.\n")
+                    answer = ollama_integration.answer(quest, stream=False)
+
+                    end_time = time.time()
+                    response_time = end_time - start_time
+
+                    if answer:
+                        print(f"\nAnswer (generated in {response_time:.2f}s):")
+                        print(f"{answer}\n")
+                        print("-" * 80)
+                    else:
+                        print("Failed to generate answer. Please try again.\n")
 
             except EOFError:
                 # Graceful exit on Ctrl+D

@@ -29,6 +29,7 @@ from config import (
     PRINT_RESULTS,
     RESULTS_PATH,
     OLLAMA_RAG_MAX_DOCS,
+    OLLAMA_ANSWER_STREAMING,
 )
 
 
@@ -304,8 +305,19 @@ def ollama_integrate_mode():
                     continue
 
                 # Get answer from Ollama integration
-                response = ollama_integration.answer(question)
-                print(f"\nAnswer: {response}")
+                print("\nAnswer: ", end="", flush=True)
+
+                if OLLAMA_ANSWER_STREAMING:
+                    # Handle streaming mode - print each chunk as it arrives
+                    complete_answer = ""
+                    for chunk in ollama_integration.answer(question, stream=True):
+                        print(chunk, end="", flush=True)
+                        complete_answer += chunk
+                    print()  # Add a newline after streaming completes
+                else:
+                    # Handle non-streaming mode - print the complete answer
+                    response = ollama_integration.answer(question, stream=False)
+                    print(response)
 
                 conversation_count += 1
 

@@ -42,6 +42,7 @@ RESULTS_PATH = None  # Path to save query results, None to disable saving
 
 # Ollama model settings
 OLLAMA_RAG_MAX_DOCS = 10  # Maximum number of documents to retrieve for each query
+OLLAMA_ANSWER_STREAMING = True  # Whether to stream answers from Ollama
 
 # System prompt for generating boolean queries from natural language questions
 OLLAMA_SYS_PROMPT_GENERATE_BOOL_QUERY_FROM_QUESTION = """
@@ -102,6 +103,7 @@ if __name__ == "__main__":
 
     print("\n=== Ollama Configuration ===")
     print("Max Documents for RAG:", OLLAMA_RAG_MAX_DOCS)
+    print("Answer Streaming Enabled:", OLLAMA_ANSWER_STREAMING)
     print(
         "Boolean Query Generation Prompt Length:",
         len(OLLAMA_SYS_PROMPT_GENERATE_BOOL_QUERY_FROM_QUESTION),
