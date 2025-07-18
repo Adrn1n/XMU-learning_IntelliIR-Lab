@@ -4,48 +4,7 @@ This project is an intelligent information retrieval system based on Boolean que
 
 ### 1.1 System Architecture
 The system adopts a layered architecture design, mainly including the following modules:
-
-```mermaid
-graph TD
-	main[main.py]
-	test[test.py]
-
-	subgraph "Api"
-		OllamaIntegrate[OllamaIntegrate.py]
-	end
-
-	subgraph "InfoRetrieval"
-		BoolRetrieval[BoolRetriveal.py]
-		RankingWeight[RankingWeight.py]
-		InvertedIndex[InvertedIndex.py]
-	end
-	
-	subgraph "Utils"
-		Tokenizer[Tokenizer.py]
-		FileLoader[FileLoader.py]
-		Logger[Logger.py]
-	end
-	
-	config[config.py]
-
-	main --> OllamaIntegrate
-	main --> BoolRetrieval
-	main --> config
-	test --> BoolRetrieval
-	test --> config
-	OllamaIntegrate --> BoolRetrieval
-	OllamaIntegrate --> FileLoader
-	OllamaIntegrate --> Logger
-	BoolRetrieval --> RankingWeight
-	BoolRetrieval --> InvertedIndex
-	BoolRetrieval --> Tokenizer
-	BoolRetrieval --> Logger
-	RankingWeight --> Logger
-	InvertedIndex --> Utils
-	Utils --> config
-	Tokenizer --> Logger
-	FileLoader --> Logger
-```
+![sys_arch](assets/Untitled-2025-07-18-1739.excalidraw.svg)
 
 #### 1.1.1 Configuration Management
 - Configuration File (`config.py`): Unified system configuration management
@@ -84,69 +43,7 @@ Lab/
 ```
 
 ### 1.3 System Workflow
-```mermaid
-flowchart TD
-    A[Program Start] --> B[Display Main Menu]
-    B --> C{User Mode Selection}
-    C -->|Choice 1| D[Boolean Query Mode]
-    C -->|Choice 2| E[Ollama RAG Mode]
-    C -->|Choice 3| F[Exit Program]
-
-    %% Boolean Query Mode Flow
-    D --> D1[Record Initial Memory Usage]
-    D1 --> D2[Build Boolean Retrieval System]
-    D2 --> D3[Load Inverted Index]
-    D3 --> D4[Record Post-Construction Memory]
-    D4 --> D5{Query Source}
-    D5 -->|From File| D6[Read Query File]
-    D5 -->|Interactive Input| D7[User Input Queries]
-    D8[Execute Query Loop]
-    D6 --> D8
-    D7 --> D8
-    D8 --> D9[Parse Boolean Expression]
-    D9 --> D10[Tokenization Processing]
-    D10 --> D11[Calculate TF-IDF Weights]
-    D11 --> D12[Cosine Similarity Calculation]
-    D12 --> D13[Sort Results]
-    D13 --> D14{More Queries?}
-    D14 -->|Yes| D8
-    D14 -->|No| D15[Performance Statistics]
-    D15 --> D16[Cache Statistics]
-    D16 --> D17{Print Results?}
-    D17 -->|Yes| D18[Display Query Results]
-    D17 -->|No| D19{Save Results?}
-    D18 --> D19
-    D19 -->|Yes| D20[Save to File]
-    D19 -->|No| D21[Return to Main Menu]
-    D20 --> D21
-    
-    %% Ollama RAG Mode Flow
-    E --> E1[Initialize Ollama Integration System]
-    E1 --> E2[Load Available Model List]
-    E2 --> E3[Display Current Model]
-    E3 --> E4{User Switch Model?}
-    E4 -->|Yes| E5[Switch Model]
-    E4 -->|No| E6[Start Interactive Q&A]
-    E5 --> E6
-    E6 --> E7[Wait for User Question]
-    E7 --> E8{Parse Special Commands}
-    E8 -->|new| E9[Clear Conversation History]
-    E8 -->|no_query| E10[Direct AI Answer]
-    E8 -->|query| E11[Custom Query]
-    E8 -->|Normal Question| E12[Generate Boolean Query]
-    E9 --> E7
-    E10 --> E13[Streaming/Non-streaming Output]
-    E11 --> E14[Retrieve Relevant Documents]
-    E12 --> E14
-    E14 --> E15[Generate Answer Based on Documents]
-    E15 --> E13
-    E13 --> E16{Continue Conversation?}
-    E16 -->|Yes| E7
-    E16 -->|No| E17[Return to Main Menu]
-    D21 --> B
-    E17 --> B
-    F --> G[Program End]
-```
+![sys_wkflw](assets/Untitled-2025-07-18-1739.excalidraw_2.svg)
 
 ### 1.4 Core Features
 1. Vector Space Model Retrieval: Document ranking based on TF-IDF weights and cosine similarity
@@ -165,26 +62,7 @@ The inverted index adopts the following data structure:
 }
 ```
 
-```mermaid
-graph TD
-    A[Document Collection] --> B[File Loader]
-    B --> C[Encoding Detection]
-    C --> D[Content Extraction]
-    D --> E[Tokenization]
-    E --> F[Term Processing]
-    F --> G[Inverted Index Structure]
-    G --> H[Term: document_frequency]
-    G --> I[Term: doc_id: term_frequency]
-    J[Document ID Mapping] --> K[Bidirectional Document Map]
-    K --> L[doc_id ↔ file_path]
-    M[Document Statistics] --> N[Total Term Count per Document]
-    subgraph "Index Components"
-        H
-        I
-        L
-        N
-    end
-```
+![invIdx_construct](assets/Untitled-2025-07-18-1739.excalidraw_4.svg)
 
 - Supports raw term frequency (raw_tf) statistics, providing the foundation for TF-IDF calculation
 - Maintains document total word count statistics, supporting normalized TF calculation
@@ -200,32 +78,7 @@ The system supports complex Boolean expressions:
     - ||: max
     - !: For each document in the resulting set (the difference between the universal set and the operand's set), a TF-IDF-like score is recalculated based on its total term count and the size of the difference set.
 
-```mermaid
-flowchart TD
-    A[Boolean Query Input] --> B[Query Parsing]
-    B --> C[Tokenization]
-    C --> D[Operator Stack]
-    C --> E[Operand Stack]
-    D --> F[AND]
-    D --> G[OR]
-    D --> H[NOT]
-    D --> I[Parentheses]
-    E --> J[Term Processing]
-    J --> K[Index Lookup]
-    K --> L[Document Set Retrieval]
-    L --> M[Boolean Logic Application]
-    M --> N{Operator Type}
-    N -->|AND| O[Set Intersection]
-    N -->|OR| P[Set Union]
-    N -->|NOT| Q[Set Complement]
-    R[TF-IDF Calculation]
-    O --> R
-    P --> R
-    Q --> R
-    R --> S[Vector Space Model]
-    S --> T[Cosine Similarity]
-    T --> U[Ranked Results]
-```
+![bl_query_pros](assets/Untitled-2025-07-18-1739.excalidraw_6.svg)
 
 ### 2.3 TF-IDF Weight Calculation
 Adopts logarithmic normalized TF-IDF formula:
@@ -239,29 +92,7 @@ Where:
 - $N$: Total number of documents in collection
 
 ### 2.4 RAG System Integration
-```mermaid
-sequenceDiagram
-    participant User
-    participant OllamaIntegrate
-    participant BoolRetrieval
-    participant InvertedIndex
-    participant Ollama_LLM
-    
-    User->>OllamaIntegrate: Natural Language Question
-    OllamaIntegrate->>Ollama_LLM: Generate Boolean Query
-    Ollama_LLM-->>OllamaIntegrate: Boolean Query String
-    
-    OllamaIntegrate->>BoolRetrieval: Execute Boolean Query
-    BoolRetrieval->>InvertedIndex: Term Lookup
-    InvertedIndex-->>BoolRetrieval: Document Sets
-    BoolRetrieval->>BoolRetrieval: TF-IDF Calculation
-    BoolRetrieval-->>OllamaIntegrate: Ranked Documents
-    
-    OllamaIntegrate->>OllamaIntegrate: Prepare Context
-    OllamaIntegrate->>Ollama_LLM: Generate Answer with Context
-    Ollama_LLM-->>OllamaIntegrate: Contextual Answer
-    OllamaIntegrate-->>User: Final Response
-```
+![rag_sys](assets/Untitled-2025-07-18-1739.excalidraw_8.svg)
 
 - Query Generation: Automatically converts natural language questions into Boolean queries
 - Document Retrieval: Uses Boolean retrieval system to obtain relevant documents
@@ -311,7 +142,7 @@ The system supports three distinct query processing modes:
    - Answer Generation: ~35 seconds for comprehensive response
    - Cache Integration: Query results cached for future use
    - response:
-        ```text
+```text
 <think>
 嗯，用户给了我一堆JSON内容，都是关于一些疾病的英文描述。我得先仔细看看这些文档里有哪些有用的信息。
 
@@ -390,7 +221,7 @@ The system supports three distinct query processing modes:
    - 特点：涉及肠道上皮细胞和其他体内的蛋白质相关联。
 
 这些信息表明蛋白质在医学疾病中的作用，特别是与缺铁、癌症等有关。
-        ```
+```
 2. Automatic Query Generation Mode (\new 蛋白质有什么用):
    - Natural Language Input: "蛋白质有什么用"
    - Auto-generated Boolean Query: "蛋白质有什么用"
@@ -398,7 +229,7 @@ The system supports three distinct query processing modes:
    - Result: 0 documents (demonstrates query term specificity requirements)
    - Fallback Behavior: System gracefully handles zero-result scenarios
    - response:
-        ```text
+```text
 <think>
 Alright, I need to help the user with their query about proteins. The question is straightforward, but I want to make sure I address all aspects correctly. 
 
@@ -418,14 +249,14 @@ I should keep my response clear and concise, avoiding any markdown or formatting
 蛋白质通过化学相互作用结合在一起，这使得它们能够在特定的环境中进行稳定和稳定的合成，从而支持生物体的正常运作。蛋白质的功能广泛，在基因表达调控、酶活性、信号传递、代谢调节等方面发挥重要作用。
 
 由于没有提供的 documents，我无法给出进一步的具体信息或回答。如果你对蛋白质的其他方面感兴趣，我很乐意为你详细解释！
-        ```
+```
 3. No-Retrieval Mode (\new \no_query 蛋白质有什么用):
    - Direct LLM Response: Bypasses document retrieval entirely
    - Response Time: ~5 seconds
    - Use Case: General knowledge questions not requiring document context
    - Answer Quality: Maintains coherent responses without retrieved context
    - response:
-        ```text
+```text
 <think>
 Alright, so I have this question: "蛋白质有什么用". It's in English. Let me figure out how to answer it.
 
@@ -443,7 +274,7 @@ I think that's all. Now I'll put it together into a concise answer in English.
 </think>
 
 蛋白质是细胞功能的重要组成元素。它们可以催化各种化学反应，例如制造激素如胰岛素，促进酶的活性。此外，蛋白质为其他分子结构提供了基础，比如核酸的合成和膜中的脂质形成。蛋白质还可能在环境或神经系统中起作用，并且在疾病方面发挥重要作用。
-        ```
+```
 
 #### 3.3.3 Answer Quality Assessment
 Context-Based Responses:
