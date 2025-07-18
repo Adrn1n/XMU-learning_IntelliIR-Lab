@@ -6,8 +6,8 @@ from typing import Dict, List, Union
 import json
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from utils.logger import setup_logger
-from utils.FileLoader import FileLoader
+from Utils.Logger import setup_logger
+from Utils.FileLoader import FileLoader
 from InfoRetrieval.BoolRetrieval import BoolRetrieval
 
 from config import (

@@ -3,7 +3,7 @@ import os
 from polyglot.text import Text
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from utils.logger import setup_logger
+from Utils.Logger import setup_logger
 
 
 class Tokenizer:

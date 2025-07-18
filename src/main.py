@@ -17,7 +17,7 @@ import psutil
 import os
 import time
 from InfoRetrieval.BoolRetrieval import BoolRetrieval
-from api.OllamaIntegrate import OllamaIntegrate
+from Api.OllamaIntegrate import OllamaIntegrate
 
 from config import (
     DOCS_DIR,

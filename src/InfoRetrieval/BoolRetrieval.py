@@ -5,9 +5,9 @@ import time
 import traceback
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from utils.logger import setup_logger
+from Utils.Logger import setup_logger
 from InfoRetrieval.InvertedIndex import InvertedIndex
-from utils.Tokenizer import Tokenizer
+from Utils.Tokenizer import Tokenizer
 from InfoRetrieval.RankingWeight import RankingWeightCalculator
 
 

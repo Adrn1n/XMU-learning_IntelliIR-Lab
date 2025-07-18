@@ -3,8 +3,10 @@ import os
 from bidict import bidict
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from utils.logger import setup_logger
-from utils.FileLoader import FileLoader
+from Utils.Logger import setup_logger
+from Utils.FileLoader import FileLoader
+
+# from Utils.Tokenizer import Tokenizer
 
 
 class InvertedIndex:
